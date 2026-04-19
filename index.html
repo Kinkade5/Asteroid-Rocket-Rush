@@ -903,7 +903,7 @@
     <button class="btn" id="startBtn">LAUNCH 🚀</button>
     <button class="btn btn-secondary" id="shopBtn" style="margin-top: 14px">SHOP 🛒</button>
     <div class="hint">Hold to thrust • Space to boost</div>
-    <div class="version-badge" id="versionBadge">v0.8.1</div>
+    <div class="version-badge" id="versionBadge">v0.8.3</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -971,7 +971,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.8.1';
+  const GAME_VERSION = 'v0.8.3';
 
   // ======================================================================
   // AUDIO ENGINE
@@ -1498,7 +1498,7 @@
       startingShields: 3, maxShields: 3,
       coinBronzeValue: 6, coinGoldValue: 21,
       pairsPerPoint: 3, pointsPerPair: 1,
-      powerupEveryPairs: 4,   // generous — rewards newer players
+      powerupEveryPairs: 3,   // generous — rewards newer players
     },
     intermediate: {
       id: 'intermediate', name: 'Intermediate',
@@ -1507,7 +1507,7 @@
       startingShields: 1, maxShields: 3,
       coinBronzeValue: 12, coinGoldValue: 42,
       pairsPerPoint: 3, pointsPerPair: 2,
-      powerupEveryPairs: 7,   // classic baseline cadence
+      powerupEveryPairs: 6,   // classic baseline cadence
     },
     expert: {
       id: 'expert', name: 'Expert',
@@ -1516,7 +1516,7 @@
       startingShields: 1, maxShields: 3,
       coinBronzeValue: 30, coinGoldValue: 105,
       pairsPerPoint: 3, pointsPerPair: 5,
-      powerupEveryPairs: 11,  // rarer — fewer safety nets
+      powerupEveryPairs: 9,  // rarer — fewer safety nets
     },
     // Master is shown as a locked tile. Full config lives here but is
     // gated on masterUnlocked. Revealing it is Phase 2's job.
@@ -1529,7 +1529,7 @@
       startingShields: 0, maxShields: 2,
       coinBronzeValue: 60, coinGoldValue: 210,
       pairsPerPoint: 3, pointsPerPair: 10,
-      powerupEveryPairs: 15,  // sparse — survive on skill
+      powerupEveryPairs: 13,  // sparse — survive on skill
     },
   };
 
@@ -1616,8 +1616,9 @@
   // left here so the grep-history for anyone searching for these names
   // ends up on this comment rather than at a confusing deletion.
   //   STARTING_SHIELDS, MAX_SHIELDS, POINTS_PER_PAIR, PAIRS_PER_POINT,
-  //   COIN_BRONZE_VALUE, COIN_GOLD_VALUE
-  const SHIELD_IFRAME_MS = 900;    // brief invincibility after a shield pop
+  //   COIN_BRONZE_VALUE, COIN_GOLD_VALUE, SHIELD_IFRAME_MS
+  // Shield iFrame is now tier-controlled via the Overcharged Shields
+  // upgrade — see getShieldIframeMs(). Base is 900ms at tier 0.
 
   // === Duration-based powerups ===
   // All durations in milliseconds. Decay runs on real wall-clock time (not
@@ -1647,6 +1648,16 @@
     magnetDuration: [MAGNET_DUR_BASE, 8000, 10000, 13000],
     doublePower:    [2, 3, 6, 9],                    // the multiplier itself
     doubleDuration: [DOUBLE_DUR_BASE, 9000, 12000, 16000],
+    // === Shield upgrades (Phase 1.5A) ===
+    // Reinforced Hull — additive delta on top of the tier's base start/max.
+    // Each tier adds +1 to both, so the tier identity is preserved (Master
+    // still ends up with fewer shields than Beginner at the same upgrade).
+    shieldStartDelta: [0, 1, 2, 3],
+    shieldMaxDelta:   [0, 1, 2, 3],
+    // Overcharged Shields — longer iFrame after a shield pop. Tier 3 also
+    // grants a brief magnet aura during the iFrame (pulls coins in, so the
+    // "punishment" of taking a hit is softened further).
+    shieldIframe:     [900, 1400, 1900, 2500],
   };
 
   // Upgrade definitions — metadata for the shop UI. The `category` field
@@ -1668,6 +1679,16 @@
     { id: 'double_duration', category: 'double', line: 'double', stat: 'duration',
       label: 'Duration', desc: 'Multiplier lasts longer',
       valueTable: 'doubleDuration', format: v => (v / 1000).toFixed(1) + 's' },
+    // === Shield upgrades (Phase 1.5A) ===
+    // `shield.hull` and `shield.overcharge` are paired stats — hull for
+    // capacity, overcharge for iFrame duration. Each increments a separate
+    // slot in the `upgrades.shield` object.
+    { id: 'shield_hull',      category: 'shield', line: 'shield', stat: 'hull',
+      label: 'Reinforced Hull', desc: '+1 start & +1 max shield per tier',
+      valueTable: 'shieldStartDelta', format: v => '+' + v + ' shields' },
+    { id: 'shield_overcharge', category: 'shield', line: 'shield', stat: 'overcharge',
+      label: 'Overcharged Shields', desc: 'Longer post-hit iFrame; T3 adds magnet aura',
+      valueTable: 'shieldIframe', format: v => (v / 1000).toFixed(1) + 's iFrame' },
   ];
 
   // Shop categories — order in this array is the display order in the grid.
@@ -1675,6 +1696,8 @@
   // Adding a future category (e.g., shield tree) is one new entry here +
   // new UPGRADE_DEFS with that category id.
   const CATEGORIES = [
+    { id: 'shield', name: 'Shield', icon: '🛡', color: '#6af0ff',
+      tagline: 'Capacity & damage mitigation' },
     { id: 'magnet', name: 'Magnet', icon: '🧲', color: '#ff79c6',
       tagline: 'Reach, strength, duration' },
     { id: 'double', name: 'Multiplier', icon: '2✕', color: '#ffb84d',
@@ -1693,6 +1716,7 @@
   const DEFAULT_UPGRADES = {
     magnet: { radius: 0, strength: 0, duration: 0 },
     double: { power: 0, duration: 0 },
+    shield: { hull: 0, overcharge: 0 },
   };
   let upgrades = loadUpgrades();
 
@@ -1733,6 +1757,27 @@
   function getMagnetDuration() { return TIER_VALUES.magnetDuration[upgrades.magnet.duration]; }
   function getDoublePower()    { return TIER_VALUES.doublePower[upgrades.double.power]; }
   function getDoubleDuration() { return TIER_VALUES.doubleDuration[upgrades.double.duration]; }
+
+  // === Shield upgrade getters ===
+  // These layer the Reinforced Hull delta onto the tier's base values.
+  // They're called wherever the code previously read tier.startingShields
+  // or tier.maxShields directly — so upgrades apply everywhere naturally.
+  function getStartingShields() {
+    const d = getDifficulty();
+    return d.startingShields + TIER_VALUES.shieldStartDelta[upgrades.shield.hull];
+  }
+  function getMaxShields() {
+    const d = getDifficulty();
+    return d.maxShields + TIER_VALUES.shieldMaxDelta[upgrades.shield.hull];
+  }
+  // Overcharged Shields — longer iFrame. Tier 3 also grants a "God Mode"
+  // feel: a brief magnet aura during the iFrame window.
+  function getShieldIframeMs() {
+    return TIER_VALUES.shieldIframe[upgrades.shield.overcharge];
+  }
+  function hasOverchargeT3() {
+    return upgrades.shield.overcharge >= 3;
+  }
 
   let asteroids = [];
   let powerups = [];
@@ -1793,7 +1838,7 @@
     // Beginner sees one quickly (~4 pairs in), Master has to earn it (~15).
     // Small 0.8× head start so the very first powerup feels a bit eager.
     nextPowerupPair = Math.max(2, Math.round(getDifficulty().powerupEveryPairs * 0.8));
-    shieldCharges = getDifficulty().startingShields;
+    shieldCharges = getStartingShields();
     shieldIFrameUntil = 0;
     shieldPopEffect = 0;
     slowmoTime = 0;
@@ -1880,9 +1925,11 @@
     //   - Shield is prioritized when player is low (survival > utility)
     //   - Otherwise, weighted mix across all 4 types
     //   - 2x is slightly rarer (most impactful = shouldn't flood the game)
-    // We look up the current tier's maxShields here — on Master it's 2, so
-    // a player at 2 shields is already "at max" and shouldn't see shields.
-    const maxShields = getDifficulty().maxShields;
+    // We look up the current effective maxShields (tier + Reinforced Hull
+    // upgrade) here — on Master without upgrades it's 2, so a player at 2
+    // shields is already "at max" and shouldn't see shields. With Hull T3
+    // on Master it climbs to 5, so shields keep being useful.
+    const maxShields = getMaxShields();
     let type;
     if (shieldCharges === 0) {
       // Low on defenses — push shield hard, but still allow variety
@@ -2532,7 +2579,7 @@
     coins = [];
     popups = [];
     particles = [];
-    shieldCharges = getDifficulty().startingShields;
+    shieldCharges = getStartingShields();
     shieldIFrameUntil = 0;
     shieldPopEffect = 0;
     slowmoTime = 0;
@@ -3156,8 +3203,10 @@
     }
 
     // === Collisions with asteroids ===
-    // Shield charges auto-activate on hit. SHIELD_IFRAME_MS gives the player
-    // time to escape the current asteroid so one hit doesn't eat 3 charges.
+    // Shield charges auto-activate on hit. Post-hit iFrame is tunable via
+    // the Overcharged Shields upgrade (base 900ms → T3 2500ms). Overcharge
+    // T3 additionally grants a brief magnet aura during iFrame so taking a
+    // hit can still feel rewarding.
     const inIFrame = performance.now() < shieldIFrameUntil;
     if (!inIFrame) {
       for (const a of asteroids) {
@@ -3165,7 +3214,8 @@
           if (shieldCharges > 0) {
             // === SHIELD POP ===
             shieldCharges--;
-            shieldIFrameUntil = performance.now() + SHIELD_IFRAME_MS;
+            const iframeMs = getShieldIframeMs();
+            shieldIFrameUntil = performance.now() + iframeMs;
             shieldPopEffect = 1;
             shake = Math.max(shake, 10);
             // Visual/haptic feedback — cyan burst
@@ -3180,6 +3230,17 @@
             });
             if (navigator.vibrate) navigator.vibrate([10, 30, 20]);
             Audio.play.shieldPop();
+            // Overcharge T3: grant a brief magnet aura matching the iFrame
+            // window. If magnet is already running, extend it up to the
+            // iFrame end (Math.max avoids accidentally *shortening* a longer
+            // active magnet).
+            if (hasOverchargeT3()) {
+              magnetTime = Math.max(magnetTime, iframeMs);
+              // Subtle pink particle puff to signal the magnet kicked in
+              addParticles(rocket.x, rocket.y, {
+                n: 10, color: '#ff79c6', speed: 2.2, life: 28, size: 1.8,
+              });
+            }
             updateHud();
           } else {
             gameOver();
@@ -3207,10 +3268,10 @@
         const def = POWERUP_DEFS[p.type] || POWERUP_DEFS.shield;
 
         if (p.type === 'shield') {
-          // Shield pickup: +1 charge up to the active tier's cap. If maxed,
-          // consolation points (through addScore so 2x applies) so the
-          // pickup isn't wasted.
-          const maxShields = getDifficulty().maxShields;
+          // Shield pickup: +1 charge up to the effective cap (tier max +
+          // Reinforced Hull delta). If maxed, consolation points (through
+          // addScore so 2x applies) so the pickup isn't wasted.
+          const maxShields = getMaxShields();
           if (shieldCharges < maxShields) {
             shieldCharges++;
             popups.push({
@@ -3312,19 +3373,17 @@
   }
 
   function renderPowerupBadges() {
-    // Shield slots: pip count matches the active tier's max shields; filled
-    // ones = available charges. Low-tier players who have 3 see 3 pips.
-    // Master-tier players who are capped at 2 see only 2.
+    // Shield slots: pip count matches effective max shields (tier + Hull
+    // upgrade); filled ones = available charges. With max at 6 (Fortress
+    // Frame on Beginner) the badge gets crowded but still readable.
     let html = '';
     if (state === STATE.PLAY || state === STATE.DEAD) {
-      const maxShields = getDifficulty().maxShields;
+      const maxShields = getMaxShields();
       let pips = '';
       for (let i = 0; i < maxShields; i++) {
         const filled = i < shieldCharges;
         pips += `<span class="shield-pip${filled ? ' filled' : ''}"></span>`;
       }
-      // If tier has 0 max shields (shouldn't happen today, but future-proof),
-      // skip the badge entirely instead of rendering an empty container.
       if (maxShields > 0) {
         html += `<div class="pu-badge shield shield-slots">🛡 ${pips}</div>`;
       }
