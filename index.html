@@ -915,7 +915,7 @@
     <button class="btn" id="startBtn">LAUNCH 🚀</button>
     <button class="btn btn-secondary" id="shopBtn" style="margin-top: 14px">SHOP 🛒</button>
     <div class="hint" id="startHint">Hold to thrust • Space to boost</div>
-    <div class="version-badge" id="versionBadge">v0.9.0</div>
+    <div class="version-badge" id="versionBadge">v0.9.1</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -983,7 +983,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.9.0';
+  const GAME_VERSION = 'v0.9.1';
 
   // ======================================================================
   // AUDIO ENGINE
@@ -1530,11 +1530,12 @@
       pairsPerPoint: 3, pointsPerPair: 5,
       powerupEveryPairs: 9,  // rarer — fewer safety nets
     },
-    // Master is shown as a locked tile. Full config lives here but is
-    // gated on masterUnlocked. Revealing it is Phase 2's job.
+    // Master is shown as a locked tile until unlocked. The `tagline` is
+    // shown post-unlock (replacing the "???" mystery). The `unlockHint`
+    // stays visible while locked as the unlock condition.
     master: {
       id: 'master', name: 'Master',
-      color: '#c879ff', icon: '👁', tagline: '???',
+      color: '#c879ff', icon: '👁', tagline: 'No mercy, no shields',
       locked: true,
       unlockHint: 'Beat Expert with 5,000+ score',
       gapSize: 115, gapMin: 85, gapRamp: 2.0,
