@@ -726,29 +726,187 @@
     background: rgba(106, 240, 255, 0.1);
     color: #6af0ff;
   }
+  /* === Difficulty selector on start menu === */
+  .difficulty-label {
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: rgba(201, 208, 242, 0.55);
+    font-weight: 700;
+    margin-top: -8px;
+    margin-bottom: 10px;
+  }
+  .difficulty-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    width: 92%;
+    max-width: 380px;
+    margin-bottom: 24px;
+  }
+  .diff-tile {
+    position: relative;
+    background: rgba(15, 20, 45, 0.55);
+    border: 1.5px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 10px 4px 8px;
+    text-align: center;
+    cursor: pointer;
+    transition: transform 0.1s, border-color 0.15s, background 0.15s;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .diff-tile:active { transform: scale(0.94); }
+  .diff-tile:hover { border-color: rgba(255,255,255,0.22); }
+  /* Selected tile — colored border + soft inner glow in tier's color */
+  .diff-tile.selected {
+    border-color: var(--tier-color, #ffd86b);
+    background: color-mix(in srgb, var(--tier-color, #ffd86b) 15%, rgba(15, 20, 45, 0.55));
+    box-shadow: 0 0 12px color-mix(in srgb, var(--tier-color, #ffd86b) 30%, transparent);
+  }
+  .diff-tile-icon {
+    font-size: 22px;
+    line-height: 1;
+    margin-bottom: 4px;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
+  }
+  .diff-tile-name {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    color: #c9d0f2;
+  }
+  .diff-tile.selected .diff-tile-name {
+    color: var(--tier-color, #ffd86b);
+  }
+  /* Locked tile — dimmed, non-interactive, shows a padlock overlay */
+  .diff-tile.locked {
+    opacity: 0.55;
+    cursor: not-allowed;
+    background: rgba(10, 12, 28, 0.5);
+  }
+  .diff-tile.locked:active { transform: none; }
+  .diff-tile.locked:hover { border-color: rgba(255,255,255,0.08); }
+  .diff-tile.locked .diff-tile-icon { filter: grayscale(1) brightness(0.7); }
+  .diff-tile-lock {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 20px;
+    pointer-events: none;
+    text-shadow: 0 2px 6px rgba(0,0,0,0.8);
+  }
+  .diff-tile-tagline {
+    position: absolute;
+    bottom: -18px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 9px;
+    color: #6b75a8;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+  }
+  .diff-tile.selected .diff-tile-tagline { opacity: 1; }
+
+  /* === Tier badge shown during play (top-left, below mute button) === */
+  #tierBadge {
+    position: absolute;
+    top: 56px; /* below the mute/settings button */
+    left: 12px;
+    padding: 4px 10px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    border-radius: 999px;
+    border: 1px solid currentColor;
+    background: rgba(10, 15, 40, 0.55);
+    backdrop-filter: blur(8px);
+    z-index: 5;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+  #tierBadge.hud-hidden { opacity: 0; pointer-events: none; }
+
+  /* === Tier label above game-over title === */
+  .gameover-tier {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 3px;
+    margin-bottom: 8px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    border: 1px solid currentColor;
+    background: rgba(10, 15, 40, 0.4);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  /* === Master unlock celebration (overlay flash) === */
+  .unlock-toast {
+    position: absolute;
+    top: 40%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.85);
+    background: linear-gradient(180deg, #c879ff 0%, #9a4fd8 100%);
+    color: #fff;
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    padding: 14px 24px;
+    border-radius: 16px;
+    box-shadow: 0 0 40px rgba(200, 121, 255, 0.6), 0 8px 30px rgba(0,0,0,0.5);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 20;
+    transition: opacity 0.3s, transform 0.4s cubic-bezier(.17,.89,.32,1.5);
+    text-align: center;
+    white-space: nowrap;
+  }
+  .unlock-toast.show {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  .unlock-toast-sub {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    margin-top: 4px;
+    opacity: 0.85;
+  }
 </style>
 </head>
 <body>
 <div id="wrap">
   <canvas id="game"></canvas>
-  <div id="roundHud" class="hud-hidden"><span class="round-label">ROUND</span><span class="round-value" id="roundValue">0</span></div>
+  <div id="roundHud" class="hud-hidden"><span class="round-label">ASTEROIDS</span><span class="round-value" id="roundValue">0</span></div>
+  <div id="tierBadge" class="hud-hidden"></div>
   <div id="hud" class="hud-hidden">
     <div class="score-caption">SCORE</div>
     <div class="score-value" id="scoreValue">0</div>
   </div>
   <div id="powerups"></div>
+  <!-- Master unlock celebration toast -->
+  <div id="unlockToast" class="unlock-toast">
+    <div>MASTER UNLOCKED</div>
+    <div class="unlock-toast-sub">A new challenge awaits</div>
+  </div>
   <div id="flash"></div>
   <div id="startScreen" class="overlay active">
     <button class="settings-btn" id="settingsBtn" aria-label="Settings">⚙</button>
     <div class="wallet-badge" id="walletBadge"><span class="coin-icon">●</span><span id="walletAmount">0</span></div>
     <div class="title">ROCKET RUSH</div>
     <div class="subtitle">DODGE • COLLECT • SURVIVE</div>
+    <div class="difficulty-label">DIFFICULTY</div>
+    <div class="difficulty-row" id="difficultyRow"></div>
     <button class="btn" id="startBtn">LAUNCH 🚀</button>
     <button class="btn btn-secondary" id="shopBtn" style="margin-top: 14px">SHOP 🛒</button>
-    <div class="hint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.7.3</div>
+    <div class="hint">Hold to thrust • Space to boost</div>
+    <div class="version-badge" id="versionBadge">v0.8.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
+    <div class="gameover-tier" id="gameoverTier"></div>
     <div class="gameover-title">GAME OVER</div>
     <div class="stats-row">
       <div class="stat-card">
@@ -813,7 +971,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.7.3';
+  const GAME_VERSION = 'v0.8.0';
 
   // ======================================================================
   // AUDIO ENGINE
@@ -1266,6 +1424,11 @@
   const shopList = document.getElementById('shopList');
   const shopWallet = document.getElementById('shopWallet');
   const coinsEarnedText = document.getElementById('coinsEarnedText');
+  // Difficulty selector + tier indicators
+  const difficultyRow = document.getElementById('difficultyRow');
+  const tierBadge = document.getElementById('tierBadge');
+  const gameoverTier = document.getElementById('gameoverTier');
+  const unlockToast = document.getElementById('unlockToast');
 
   // Render version from the single source of truth (GAME_VERSION above)
   if (versionBadge) versionBadge.textContent = GAME_VERSION;
@@ -1290,12 +1453,9 @@
   const STATE = { MENU: 0, PLAY: 1, DEAD: 2 };
   let state = STATE.MENU;
 
-  // Persistent records (localStorage). Two independent bests:
-  //   - bestScore: highest run-score ever achieved (will eventually feed into
-  //                the rogue-like economy as a reference for total earnings)
-  //   - bestRound: deepest round-count ever reached (achievement metric)
-  let bestScore = parseInt(localStorage.getItem('rocketRushBestScore') || localStorage.getItem('rocketRushHigh') || '0');
-  let bestRound = parseInt(localStorage.getItem('rocketRushBestRound') || '0');
+  // Best scores are now tracked per-tier (see bestScoreByTier /
+  // bestAsteroidsByTier above). For the current display in game-over, we
+  // look up the active tier's record.
 
   const rocket = {
     x: 90, y: 300, vy: 0, r: 14,
@@ -1313,18 +1473,146 @@
 
   // === SCORING ===
   // Passing asteroids still scores, but slowly — coins are the main event.
-  // Every Nth asteroid pair passed = 1 pt. Coins dominate the scoreline.
-  const POINTS_PER_PAIR = 1;
-  const PAIRS_PER_POINT = 3;       // 1 pt for every 3 pairs passed
-  const COIN_BRONZE_VALUE = 6;     // safe center-of-gap coins
-  const COIN_GOLD_VALUE = 21;      // risky edge-hugging coins
+  // The actual values used per run come from the current difficulty's config
+  // (below). These constants are kept for reference but no longer used directly.
 
-  // === SHIELD CHARGES ===
-  // Consumable, not duration-based. Auto-activates on collision if charges > 0.
-  // These are tunable — the rogue-like system will modify them for upgrades
-  // (e.g. "Armored Hull" perk = MAX_SHIELDS + 1 and STARTING_SHIELDS + 1).
-  const STARTING_SHIELDS = 1;
-  const MAX_SHIELDS = 3;
+  // === DIFFICULTIES ===
+  // Each tier fully defines a playstyle: physics/layout difficulty (gap,
+  // ramp), starting shields, and the economy (coin values, pair-pass points).
+  // Adding a new tier = one new entry here + one new tile in the selector.
+  //
+  // Design notes:
+  //   - gapSize = initial pair gap; gapMin = floor as ramp tightens it
+  //   - gapRamp = pixels shrunk per pair passed (bigger = harder faster)
+  //   - startingShields: shields at spawn. Difficulty sets the START count.
+  //     The (future) shop upgrade raises the MAX cap, not the start count.
+  //   - coin values ARE the pre-multiplier values. Higher-tier coins are
+  //     literally more valuable, so popups show the bigger number naturally.
+  //   - pair-pass scoring gets its own multiplier too (pointsPerPair), so
+  //     surviving without collecting coins still scales with tier.
+  const DIFFICULTIES = {
+    beginner: {
+      id: 'beginner', name: 'Beginner',
+      color: '#6af0ff', icon: '🌱', tagline: 'Forgiving & friendly',
+      gapSize: 220, gapMin: 160, gapRamp: 0.9,
+      startingShields: 3, maxShields: 3,
+      coinBronzeValue: 6, coinGoldValue: 21,
+      pairsPerPoint: 3, pointsPerPair: 1,
+    },
+    intermediate: {
+      id: 'intermediate', name: 'Intermediate',
+      color: '#ffd86b', icon: '⭐', tagline: 'The classic challenge',
+      gapSize: 180, gapMin: 130, gapRamp: 1.2,
+      startingShields: 1, maxShields: 3,
+      coinBronzeValue: 12, coinGoldValue: 42,
+      pairsPerPoint: 3, pointsPerPair: 2,
+    },
+    expert: {
+      id: 'expert', name: 'Expert',
+      color: '#ff5a9e', icon: '🔥', tagline: 'For the fearless',
+      gapSize: 140, gapMin: 105, gapRamp: 1.6,
+      startingShields: 1, maxShields: 3,
+      coinBronzeValue: 30, coinGoldValue: 105,
+      pairsPerPoint: 3, pointsPerPair: 5,
+    },
+    // Master is shown as a locked tile. Full config lives here but is
+    // gated on masterUnlocked. Revealing it is Phase 2's job.
+    master: {
+      id: 'master', name: 'Master',
+      color: '#c879ff', icon: '👁', tagline: '???',
+      locked: true,
+      unlockHint: 'Beat Expert with 5,000+ score',
+      gapSize: 115, gapMin: 85, gapRamp: 2.0,
+      startingShields: 0, maxShields: 2,
+      coinBronzeValue: 60, coinGoldValue: 210,
+      pairsPerPoint: 3, pointsPerPair: 10,
+    },
+  };
+
+  // Display order for the selector. Master is last on purpose (teases the
+  // locked tile at the end of the row).
+  const DIFFICULTY_ORDER = ['beginner', 'intermediate', 'expert', 'master'];
+
+  // === Current difficulty ===
+  // Persisted so the player doesn't have to reselect each session. Default
+  // to intermediate (the classic tuning) since that's what existing players
+  // have been playing.
+  let currentDifficultyId = localStorage.getItem('rocketRushDifficulty') || 'intermediate';
+  // Guard against stale values (e.g. a tier we removed) — always fall back
+  // to intermediate if the saved value isn't valid.
+  if (!DIFFICULTIES[currentDifficultyId]) currentDifficultyId = 'intermediate';
+
+  function getDifficulty() { return DIFFICULTIES[currentDifficultyId]; }
+
+  function setDifficulty(id) {
+    if (!DIFFICULTIES[id]) return;
+    if (DIFFICULTIES[id].locked && !isMasterUnlocked()) return; // refuse to set a locked tier
+    currentDifficultyId = id;
+    try { localStorage.setItem('rocketRushDifficulty', id); } catch (_) {}
+  }
+
+  // === Master unlock tracking ===
+  // Persisted separately from the difficulty itself so we don't accidentally
+  // wipe the unlock by clearing the difficulty key.
+  function isMasterUnlocked() {
+    return localStorage.getItem('rocketRushMasterUnlocked') === '1';
+  }
+  function setMasterUnlocked() {
+    try { localStorage.setItem('rocketRushMasterUnlocked', '1'); } catch (_) {}
+  }
+  // Unlock threshold — checked in gameOver when the run's score clears it
+  // on Expert tier. Easy to tune here.
+  const MASTER_UNLOCK_SCORE = 5000;
+  const MASTER_UNLOCK_TIER = 'expert';
+
+  // === Per-tier best scores ===
+  // Each tier tracks its own best score and best asteroids-passed. Comparing
+  // a Beginner score to an Expert score would be nonsense, so they're kept
+  // separate. Legacy single-value best scores are migrated into the
+  // intermediate slot (that's what they were under the old system).
+  let bestScoreByTier = loadBestScoreByTier();
+  let bestAsteroidsByTier = loadBestAsteroidsByTier();
+
+  function loadBestScoreByTier() {
+    try {
+      const raw = localStorage.getItem('rocketRushBestScoreByTier');
+      if (raw) return { ...defaultTierRecord(), ...JSON.parse(raw) };
+    } catch (_) {}
+    // Migrate legacy single-best-score into intermediate (old default tier)
+    const legacy = parseInt(localStorage.getItem('rocketRushBestScore') || localStorage.getItem('rocketRushHigh') || '0');
+    const migrated = defaultTierRecord();
+    if (legacy > 0) migrated.intermediate = legacy;
+    return migrated;
+  }
+
+  function loadBestAsteroidsByTier() {
+    try {
+      const raw = localStorage.getItem('rocketRushBestAsteroidsByTier');
+      if (raw) return { ...defaultTierRecord(), ...JSON.parse(raw) };
+    } catch (_) {}
+    const legacy = parseInt(localStorage.getItem('rocketRushBestRound') || '0');
+    const migrated = defaultTierRecord();
+    if (legacy > 0) migrated.intermediate = legacy;
+    return migrated;
+  }
+
+  function defaultTierRecord() {
+    return { beginner: 0, intermediate: 0, expert: 0, master: 0 };
+  }
+
+  function saveBestScoreByTier() {
+    try { localStorage.setItem('rocketRushBestScoreByTier', JSON.stringify(bestScoreByTier)); } catch (_) {}
+  }
+  function saveBestAsteroidsByTier() {
+    try { localStorage.setItem('rocketRushBestAsteroidsByTier', JSON.stringify(bestAsteroidsByTier)); } catch (_) {}
+  }
+
+  // === Legacy constants kept for reference (no longer the source of truth) ===
+  // Code now reads from getDifficulty() everywhere. These definitions are
+  // left here so the grep-history for anyone searching for these names
+  // ends up on this comment rather than at a confusing deletion.
+  //   STARTING_SHIELDS, MAX_SHIELDS, POINTS_PER_PAIR, PAIRS_PER_POINT,
+  //   COIN_BRONZE_VALUE, COIN_GOLD_VALUE
   const SHIELD_IFRAME_MS = 900;    // brief invincibility after a shield pop
 
   // === Duration-based powerups ===
@@ -1454,8 +1742,8 @@
   let nextAsteroidX = 0;
   let nextPowerupScore = 40;
 
-  // Shield system
-  let shieldCharges = STARTING_SHIELDS;
+  // Shield system — starting value set by reset() from current tier's config
+  let shieldCharges = 0;
   let shieldIFrameUntil = 0;
   let shieldPopEffect = 0;
   // Duration powerups
@@ -1495,7 +1783,7 @@
     distance = 0;
     nextAsteroidX = BASE_W + 100;
     nextPowerupScore = 40;
-    shieldCharges = STARTING_SHIELDS;
+    shieldCharges = getDifficulty().startingShields;
     shieldIFrameUntil = 0;
     shieldPopEffect = 0;
     slowmoTime = 0;
@@ -1508,8 +1796,10 @@
 
   function spawnAsteroidPair(x) {
     // Difficulty scales on pairsPassed, not `score` — since coin points can
-    // make `score` jump by 21, it would warp the gap-tightening curve.
-    const gapSize = Math.max(130, 180 - pairsPassed * 1.2);
+    // make `score` jump big, it would warp the gap-tightening curve.
+    // Gap formula and floor come from the active difficulty tier.
+    const diff = getDifficulty();
+    const gapSize = Math.max(diff.gapMin, diff.gapSize - pairsPassed * diff.gapRamp);
     const minY = 80;
     const maxY = BASE_H - 80 - gapSize;
     const gapY = minY + Math.random() * (maxY - minY);
@@ -1563,11 +1853,12 @@
   }
 
   function makeCoin(x, y, kind) {
+    const diff = getDifficulty();
     return {
       x, y,
       kind,                       // 'bronze' or 'gold'
       r: kind === 'gold' ? 11 : 9,
-      value: kind === 'gold' ? COIN_GOLD_VALUE : COIN_BRONZE_VALUE,
+      value: kind === 'gold' ? diff.coinGoldValue : diff.coinBronzeValue,
       phase: Math.random() * Math.PI * 2,
       collected: false,
       collectAnim: 0,             // 0-1 animates coin vanishing
@@ -1579,6 +1870,9 @@
     //   - Shield is prioritized when player is low (survival > utility)
     //   - Otherwise, weighted mix across all 4 types
     //   - 2x is slightly rarer (most impactful = shouldn't flood the game)
+    // We look up the current tier's maxShields here — on Master it's 2, so
+    // a player at 2 shields is already "at max" and shouldn't see shields.
+    const maxShields = getDifficulty().maxShields;
     let type;
     if (shieldCharges === 0) {
       // Low on defenses — push shield hard, but still allow variety
@@ -1587,7 +1881,7 @@
       else if (r < 0.8) type = 'slowmo';
       else if (r < 0.92) type = 'magnet';
       else type = 'double';
-    } else if (shieldCharges >= MAX_SHIELDS) {
+    } else if (shieldCharges >= maxShields) {
       // Can't hold more shields — pick from the other three
       const r = Math.random();
       if (r < 0.45) type = 'slowmo';
@@ -1909,6 +2203,77 @@
     shopWallet.textContent = formatted;
   }
 
+  // ===== Difficulty selector =====
+  // Builds the 4-tile selector on the start menu. Rebuilt whenever unlock
+  // state changes (so Master transitions from locked → selectable without
+  // a reload) or when the player picks a different tier. Tiles show:
+  //   - Icon + short name (always)
+  //   - Tagline below when selected
+  //   - 🔒 overlay when locked + the unlockHint
+  function renderDifficultySelector() {
+    let html = '';
+    for (const id of DIFFICULTY_ORDER) {
+      const d = DIFFICULTIES[id];
+      const locked = d.locked && !isMasterUnlocked();
+      const selected = id === currentDifficultyId && !locked;
+      const classes = [
+        'diff-tile',
+        selected ? 'selected' : '',
+        locked ? 'locked' : '',
+      ].filter(Boolean).join(' ');
+      // Locked tiles show the tagline as the unlock hint (replacing the ??? teaser)
+      const tagline = locked ? (d.unlockHint || 'Locked') : d.tagline;
+      html += `
+        <div class="${classes}" data-diff="${id}" style="--tier-color:${d.color}">
+          <div class="diff-tile-icon">${d.icon}</div>
+          <div class="diff-tile-name">${d.name.toUpperCase()}</div>
+          ${locked ? '<div class="diff-tile-lock">🔒</div>' : ''}
+          <div class="diff-tile-tagline">${tagline}</div>
+        </div>`;
+    }
+    difficultyRow.innerHTML = html;
+    // Wire tile clicks
+    difficultyRow.querySelectorAll('.diff-tile').forEach(tile => {
+      tile.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const id = tile.getAttribute('data-diff');
+        const d = DIFFICULTIES[id];
+        if (d.locked && !isMasterUnlocked()) {
+          // Tapping a locked tile plays a soft "no" sound, doesn't change state
+          Audio.play.uiBack();
+          return;
+        }
+        if (id === currentDifficultyId) {
+          Audio.play.uiClick();
+          return; // already selected
+        }
+        ensureAudio();
+        setDifficulty(id);
+        Audio.play.uiClick();
+        renderDifficultySelector();
+      });
+    });
+  }
+
+  // Update the small tier badge shown during play (top-left under mute btn).
+  // Colored in the active tier's color so at a glance you know which mode
+  // you're in. Hidden on menu / game-over (tier appears on the game-over
+  // overlay separately).
+  function refreshTierBadge() {
+    const d = getDifficulty();
+    tierBadge.textContent = d.name.toUpperCase();
+    tierBadge.style.color = d.color;
+  }
+
+  // Update the tier pill shown above "GAME OVER" — same colors as the badge
+  // during play, reinforces which difficulty the stats below belong to.
+  function refreshGameoverTier() {
+    const d = getDifficulty();
+    gameoverTier.textContent = d.name.toUpperCase() + ' TIER';
+    gameoverTier.style.color = d.color;
+  }
+
   // ===== Shop state =====
   // Tracks which view is showing. When null, we're on the category grid.
   // When set to a category id, we're viewing that category's upgrades.
@@ -2097,12 +2462,16 @@
     state = STATE.PLAY;
     hideOverlay(startScreen);
     hideOverlay(gameOverScreen);
+    // Hide the unlock toast in case it was still showing from the last run
+    unlockToast.classList.remove('show');
     // Show the in-game mute icon — always accessible during play
     muteToggle.classList.remove('hidden');
     refreshMuteIcon();
-    // Reveal both HUDs (round on top, score on bottom)
+    // Reveal both HUDs (asteroids on top, score on bottom) + tier badge
     hud.classList.remove('hud-hidden');
     roundHud.classList.remove('hud-hidden');
+    refreshTierBadge();
+    tierBadge.classList.remove('hud-hidden');
     updateHud();
 
     // === LAUNCH BURST ===
@@ -2139,18 +2508,21 @@
     thrusting = false;
     hideOverlay(gameOverScreen);
     showOverlay(startScreen);
+    // Hide the unlock toast if it's still visible from a Master unlock
+    unlockToast.classList.remove('show');
     // Hide the in-game mute icon — gear button in menu handles audio now
     muteToggle.classList.add('hidden');
     // Hide both HUDs so the menu looks clean
     hud.classList.add('hud-hidden');
     roundHud.classList.add('hud-hidden');
+    tierBadge.classList.add('hud-hidden');
     // Also clear lingering play-state objects for a clean menu view
     asteroids = [];
     powerups = [];
     coins = [];
     popups = [];
     particles = [];
-    shieldCharges = STARTING_SHIELDS;
+    shieldCharges = getDifficulty().startingShields;
     shieldIFrameUntil = 0;
     shieldPopEffect = 0;
     slowmoTime = 0;
@@ -2162,6 +2534,9 @@
     rocket.y = BASE_H / 2;
     rocket.vy = 0;
     rocket.rot = 0;
+    // Rebuild the difficulty selector in case Master got unlocked in the
+    // run that just ended.
+    renderDifficultySelector();
   }
 
   function gameOver() {
@@ -2191,25 +2566,44 @@
     thrustSoundOn = false;
     Audio.play.death();
 
-    // === Record bests (independently) ===
-    // Score and round are tracked separately so a player can set a new "best
-    // round" even on a low-score run, and vice versa. Each has its own
-    // "NEW BEST!" badge animation.
-    const scoreIsNewBest = score > bestScore;
-    const roundIsNewBest = pairsPassed > bestRound;
+    // === Record bests (per-tier, independently) ===
+    // Each tier has its own score & asteroids best (stored in
+    // bestScoreByTier / bestAsteroidsByTier). Comparing across tiers would
+    // be unfair — a 500 on Beginner isn't the same as a 500 on Master — so
+    // we keep them separated.
+    const tierId = currentDifficultyId;
+    const prevBestScore = bestScoreByTier[tierId] || 0;
+    const prevBestAsteroids = bestAsteroidsByTier[tierId] || 0;
+    const scoreIsNewBest = score > prevBestScore;
+    const roundIsNewBest = pairsPassed > prevBestAsteroids;
     if (scoreIsNewBest) {
-      bestScore = score;
-      localStorage.setItem('rocketRushBestScore', String(bestScore));
+      bestScoreByTier[tierId] = score;
+      saveBestScoreByTier();
     }
     if (roundIsNewBest) {
-      bestRound = pairsPassed;
-      localStorage.setItem('rocketRushBestRound', String(bestRound));
+      bestAsteroidsByTier[tierId] = pairsPassed;
+      saveBestAsteroidsByTier();
+    }
+
+    // === Master unlock check ===
+    // If the player just beat the unlock tier (Expert) with the threshold
+    // score, Master becomes selectable. Show a celebration toast on the
+    // game-over overlay so they know why a new tile appeared. Only fires
+    // once — subsequent qualifying runs are silent.
+    let justUnlockedMaster = false;
+    if (
+      !isMasterUnlocked() &&
+      tierId === MASTER_UNLOCK_TIER &&
+      score >= MASTER_UNLOCK_SCORE
+    ) {
+      setMasterUnlocked();
+      justUnlockedMaster = true;
     }
 
     // === Bank the run's coins into the wallet ===
-    // Coin value picked up this run (bronze: 6, gold: 21, consolation: 15
-    // when a shield pickup is redundant at max charges) becomes persistent
-    // currency for the upgrade shop.
+    // Coin value picked up this run becomes persistent currency for the
+    // upgrade shop. Tier-scaled coin values already include the multiplier,
+    // so higher tiers naturally bank faster.
     const coinsThisRun = runCoins;
     bankedCoins += coinsThisRun;
     saveBankedCoins();
@@ -2217,21 +2611,32 @@
     refreshWalletUI();
 
     // Populate game-over UI
+    refreshGameoverTier();
     finalScoreEl.textContent = score.toLocaleString();
     finalRoundEl.textContent = pairsPassed.toLocaleString();
-    bestScoreEl.textContent = bestScore.toLocaleString();
-    bestRoundEl.textContent = bestRound.toLocaleString();
+    bestScoreEl.textContent = (bestScoreByTier[tierId] || 0).toLocaleString();
+    bestRoundEl.textContent = (bestAsteroidsByTier[tierId] || 0).toLocaleString();
     // Reset badge states before showing the overlay, then flip them on after
     // a beat so the transition animation plays (otherwise they'd be static).
     newBestScoreEl.classList.remove('show');
     newBestRoundEl.classList.remove('show');
 
-    // Contextual tip based on score. Stays silent above ~50 points since
-    // the player clearly knows what they're doing.
-    if (score < 10) {
-      unlockHintEl.textContent = '💡 Grab coins for bigger points — gold = 21, bronze = 6';
-    } else if (score < 50) {
+    // Contextual tip based on score + tier context. Kept short.
+    const diff = getDifficulty();
+    const bronzeV = diff.coinBronzeValue;
+    const goldV = diff.coinGoldValue;
+    if (score < bronzeV * 2) {
+      unlockHintEl.textContent = `💡 Grab coins — gold = ${goldV}, bronze = ${bronzeV}`;
+    } else if (score < bronzeV * 8) {
       unlockHintEl.textContent = '💡 Power-ups start appearing as you score higher';
+    } else if (tierId === MASTER_UNLOCK_TIER && !isMasterUnlocked()) {
+      // Nudge toward the unlock if they're close
+      const progress = Math.floor((score / MASTER_UNLOCK_SCORE) * 100);
+      if (progress >= 40) {
+        unlockHintEl.textContent = `🔒 ${progress}% toward Master unlock`;
+      } else {
+        unlockHintEl.textContent = '';
+      }
     } else {
       unlockHintEl.textContent = '';
     }
@@ -2239,13 +2644,22 @@
     setTimeout(() => {
       showOverlay(gameOverScreen);
       // Flash the NEW BEST! badges AFTER the overlay is visible so the
-      // pop animation reads clearly. Extra 120ms delay per badge so the
-      // two badges (if both are new bests) stagger nicely.
+      // pop animation reads clearly. Extra delay per badge so the two
+      // (if both are new bests) stagger nicely.
       if (scoreIsNewBest) {
         setTimeout(() => newBestScoreEl.classList.add('show'), 180);
       }
       if (roundIsNewBest) {
         setTimeout(() => newBestRoundEl.classList.add('show'), 320);
+      }
+      // Master unlock celebration: big toast that fades in, holds, fades out.
+      // Timing: land well after game-over overlay is visible.
+      if (justUnlockedMaster) {
+        setTimeout(() => {
+          unlockToast.classList.add('show');
+          if (navigator.vibrate) navigator.vibrate([40, 60, 40, 60, 80]);
+        }, 500);
+        setTimeout(() => unlockToast.classList.remove('show'), 3200);
       }
     }, 700);
   }
@@ -2663,16 +3077,18 @@
     coins = coins.filter(c => c.x > -20 && c.collectAnim < 1);
 
     // === Scoring from passed asteroid pairs ===
-    // 1 point per PAIRS_PER_POINT (3) pairs — gentle background scoring,
-    // coins are the stars of the show.
+    // Pair-pass scoring is tier-controlled (pairsPerPoint / pointsPerPair),
+    // so higher tiers reward survival more generously. Coins remain the
+    // dominant earner but this gives a steady baseline.
+    const diff = getDifficulty();
     for (const a of asteroids) {
       if (!a.passed && a.top && a.x + a.w < rocket.x) {
         a.passed = true;
         pairsPassed++;
-        if (pairsPassed % PAIRS_PER_POINT === 0) {
-          addScore(POINTS_PER_PAIR);
+        if (pairsPassed % diff.pairsPerPoint === 0) {
+          addScore(diff.pointsPerPair);
         } else {
-          updateHud(); // still update so round count increments
+          updateHud(); // still update so asteroid count increments
         }
         Audio.play.asteroidPass();
 
@@ -2776,9 +3192,11 @@
         const def = POWERUP_DEFS[p.type] || POWERUP_DEFS.shield;
 
         if (p.type === 'shield') {
-          // Shield pickup: +1 charge up to MAX_SHIELDS. If maxed, consolation
-          // points (through addScore so 2x applies) so the pickup isn't wasted.
-          if (shieldCharges < MAX_SHIELDS) {
+          // Shield pickup: +1 charge up to the active tier's cap. If maxed,
+          // consolation points (through addScore so 2x applies) so the
+          // pickup isn't wasted.
+          const maxShields = getDifficulty().maxShields;
+          if (shieldCharges < maxShields) {
             shieldCharges++;
             popups.push({
               x: p.x, y: p.y, text: '+SHIELD',
@@ -2879,16 +3297,22 @@
   }
 
   function renderPowerupBadges() {
-    // Shield slots: always show MAX_SHIELDS pips, filled ones = available charges.
-    // Each duration powerup shows a compact badge with a timer bar when active.
+    // Shield slots: pip count matches the active tier's max shields; filled
+    // ones = available charges. Low-tier players who have 3 see 3 pips.
+    // Master-tier players who are capped at 2 see only 2.
     let html = '';
     if (state === STATE.PLAY || state === STATE.DEAD) {
+      const maxShields = getDifficulty().maxShields;
       let pips = '';
-      for (let i = 0; i < MAX_SHIELDS; i++) {
+      for (let i = 0; i < maxShields; i++) {
         const filled = i < shieldCharges;
         pips += `<span class="shield-pip${filled ? ' filled' : ''}"></span>`;
       }
-      html += `<div class="pu-badge shield shield-slots">🛡 ${pips}</div>`;
+      // If tier has 0 max shields (shouldn't happen today, but future-proof),
+      // skip the badge entirely instead of rendering an empty container.
+      if (maxShields > 0) {
+        html += `<div class="pu-badge shield shield-slots">🛡 ${pips}</div>`;
+      }
     }
     // Compact builder for any duration-based powerup badge.
     // When time remaining drops below WARN_MS, the badge gets an `.expiring`
@@ -2989,6 +3413,7 @@
   setButtonsEnabled(shopScreen, false);
   setButtonsEnabled(settingsScreen, false);
   refreshWalletUI();  // show current banked coins on main menu
+  renderDifficultySelector();  // build the 4 tiles (Master locked unless unlocked)
   requestAnimationFrame(loop);
 
   // Service worker registration — enabled for HTTPS deployment (Netlify, etc.)
