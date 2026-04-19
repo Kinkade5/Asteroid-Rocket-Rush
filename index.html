@@ -903,7 +903,7 @@
     <button class="btn" id="startBtn">LAUNCH 🚀</button>
     <button class="btn btn-secondary" id="shopBtn" style="margin-top: 14px">SHOP 🛒</button>
     <div class="hint">Hold to thrust • Space to boost</div>
-    <div class="version-badge" id="versionBadge">v0.8.0</div>
+    <div class="version-badge" id="versionBadge">v0.8.1</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -971,7 +971,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.8.0';
+  const GAME_VERSION = 'v0.8.1';
 
   // ======================================================================
   // AUDIO ENGINE
@@ -1498,6 +1498,7 @@
       startingShields: 3, maxShields: 3,
       coinBronzeValue: 6, coinGoldValue: 21,
       pairsPerPoint: 3, pointsPerPair: 1,
+      powerupEveryPairs: 4,   // generous — rewards newer players
     },
     intermediate: {
       id: 'intermediate', name: 'Intermediate',
@@ -1506,6 +1507,7 @@
       startingShields: 1, maxShields: 3,
       coinBronzeValue: 12, coinGoldValue: 42,
       pairsPerPoint: 3, pointsPerPair: 2,
+      powerupEveryPairs: 7,   // classic baseline cadence
     },
     expert: {
       id: 'expert', name: 'Expert',
@@ -1514,6 +1516,7 @@
       startingShields: 1, maxShields: 3,
       coinBronzeValue: 30, coinGoldValue: 105,
       pairsPerPoint: 3, pointsPerPair: 5,
+      powerupEveryPairs: 11,  // rarer — fewer safety nets
     },
     // Master is shown as a locked tile. Full config lives here but is
     // gated on masterUnlocked. Revealing it is Phase 2's job.
@@ -1526,6 +1529,7 @@
       startingShields: 0, maxShields: 2,
       coinBronzeValue: 60, coinGoldValue: 210,
       pairsPerPoint: 3, pointsPerPair: 10,
+      powerupEveryPairs: 15,  // sparse — survive on skill
     },
   };
 
@@ -1740,7 +1744,10 @@
   let pairsPassed = 0;
   let distance = 0;
   let nextAsteroidX = 0;
-  let nextPowerupScore = 40;
+  // Powerup spawn trigger — measured in asteroid pairs, not score. This way
+  // the cadence is consistent regardless of tier (since tiers multiply coin
+  // values, a score-based trigger would flood higher tiers with powerups).
+  let nextPowerupPair = 5;
 
   // Shield system — starting value set by reset() from current tier's config
   let shieldCharges = 0;
@@ -1782,7 +1789,10 @@
     runCoins = 0;
     distance = 0;
     nextAsteroidX = BASE_W + 100;
-    nextPowerupScore = 40;
+    // First powerup lands at roughly the tier's cadence from the start — so
+    // Beginner sees one quickly (~4 pairs in), Master has to earn it (~15).
+    // Small 0.8× head start so the very first powerup feels a bit eager.
+    nextPowerupPair = Math.max(2, Math.round(getDifficulty().powerupEveryPairs * 0.8));
     shieldCharges = getDifficulty().startingShields;
     shieldIFrameUntil = 0;
     shieldPopEffect = 0;
@@ -3092,8 +3102,10 @@
         }
         Audio.play.asteroidPass();
 
-        // Powerup spawn threshold (point-based now since scores are bigger)
-        if (score >= nextPowerupScore) {
+        // Powerup spawn trigger — pair-based so cadence is tier-independent.
+        // Each tier sets its own `powerupEveryPairs` (Beginner generous,
+        // Master sparse). Random ±20% wobble so they don't feel metronomic.
+        if (pairsPassed >= nextPowerupPair) {
           const upcoming = asteroids.filter(x => x.top && !x.passed && x.x > rocket.x + 40);
           if (upcoming.length > 0) {
             const top = upcoming[0];
@@ -3103,7 +3115,10 @@
               spawnPowerup(top.x + top.w / 2, midY);
             }
           }
-          nextPowerupScore = score + 35 + Math.floor(Math.random() * 25);
+          const base = diff.powerupEveryPairs;
+          // Jitter: 0.8× to 1.2× the base cadence, rounded to whole pairs.
+          const jitter = 0.8 + Math.random() * 0.4;
+          nextPowerupPair = pairsPassed + Math.max(1, Math.round(base * jitter));
         }
       }
     }
