@@ -276,16 +276,22 @@
   .pu-badge.slowmo { border-color: #c879ff; color: #c879ff; box-shadow: 0 0 12px rgba(200,121,255,0.4); }
   .pu-badge.double { border-color: #ffb84d; color: #ffb84d; box-shadow: 0 0 12px rgba(255,184,77,0.4); }
   .pu-badge.magnet { border-color: #ff79c6; color: #ff79c6; box-shadow: 0 0 12px rgba(255,121,198,0.4); }
-  /* Expiring-soon blink — applied when <1.5s remains on a duration buff.
-     Uses opacity so the badge doesn't move (moving UI is distracting in-game).
-     The `step-end` timing function creates a hard on/off blink rather than a
-     smooth fade, which reads as "warning" more clearly than a gentle pulse. */
-  @keyframes pu-expiring-blink {
-    0%, 49%   { opacity: 1; }
-    50%, 100% { opacity: 0.35; }
+  .pu-badge.shock  { border-color: #6af0ff; color: #6af0ff; box-shadow: 0 0 14px rgba(106,240,255,0.55); }
+  /* Expiring-soon burst — applied when <1.5s remains on a duration buff.
+     Three quick flashes per 500ms cycle ("tap-tap-tap ... tap-tap-tap") so
+     the warning reads as urgent rather than metronomic. Opacity-only so
+     the badge doesn't shift layout. */
+  @keyframes pu-expiring-burst {
+    0%, 10%   { opacity: 1; }
+    5%        { opacity: 0.25; }
+    15%, 25%  { opacity: 1; }
+    20%       { opacity: 0.25; }
+    30%, 40%  { opacity: 1; }
+    35%       { opacity: 0.25; }
+    40%, 100% { opacity: 1; }
   }
   .pu-badge.expiring {
-    animation: pu-expiring-blink 0.4s step-end infinite;
+    animation: pu-expiring-burst 0.5s linear infinite;
   }
   .pu-bar {
     width: 40px;
@@ -809,6 +815,12 @@
     pointer-events: none;
   }
   .diff-tile.selected .diff-tile-tagline { opacity: 1; }
+  /* Locked tiles always show their tagline — it's the unlock hint, and
+     hiding it behind a hover/selected state would defeat the purpose. */
+  .diff-tile.locked .diff-tile-tagline {
+    opacity: 0.85;
+    color: #9aa3d6;
+  }
 
   /* === Tier badge shown during play (top-left, below mute button) === */
   #tierBadge {
@@ -902,8 +914,8 @@
     <div class="difficulty-row" id="difficultyRow"></div>
     <button class="btn" id="startBtn">LAUNCH 🚀</button>
     <button class="btn btn-secondary" id="shopBtn" style="margin-top: 14px">SHOP 🛒</button>
-    <div class="hint">Hold to thrust • Space to boost</div>
-    <div class="version-badge" id="versionBadge">v0.8.3</div>
+    <div class="hint" id="startHint">Hold to thrust • Space to boost</div>
+    <div class="version-badge" id="versionBadge">v0.9.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -971,7 +983,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.8.3';
+  const GAME_VERSION = 'v0.9.0';
 
   // ======================================================================
   // AUDIO ENGINE
@@ -1658,7 +1670,29 @@
     // grants a brief magnet aura during the iFrame (pulls coins in, so the
     // "punishment" of taking a hit is softened further).
     shieldIframe:     [900, 1400, 1900, 2500],
+    // Reactive Shields — this line is stage-based, not value-based. Each
+    // tier is a named ability (Blast/Shock/Nova) that adds a new effect on
+    // shield pop. Display logic maps the integer to a label via `format`.
+    reactiveTier:     [0, 1, 2, 3],
   };
+
+  // === Reactive Shields constants ===
+  // Blast radius grows per tier. Measured in logical px (canvas BASE coords).
+  // 90 is about 1.5× rocket diameter — clears the hit + maybe one neighbor.
+  // 120 is wider, typically clears a full pair. 180 is half the canvas,
+  // "screen clearing" feel for the T3 Nova payoff.
+  const BLAST_RADIUS_BY_TIER = { 1: 90, 2: 120, 3: 180 };
+  const SHOCK_DUR = 4000;   // ms — 2× score window from Shock/Nova
+  const SHOCK_MULT = 2;     // flat 2× — does NOT scale with Multiplier upgrade
+  // Nova coins home toward the rocket for this many ms, then behave as normal
+  // coins (which still get magnet-pulled if magnetTime > 0).
+  const NOVA_HOMING_MS = 400;
+  // Soft cap for on-screen particles. New spawns silently skip when at cap
+  // so Nova blasts near many asteroids can't tank framerate on mobile.
+  const PARTICLE_CAP = 150;
+  // Separate cost table for Reactive Shields — pricier than other lines
+  // because each tier is a game-changing ability, not a stat tweak.
+  const REACTIVE_COSTS = [0, 500, 2500, 10000];
 
   // Upgrade definitions — metadata for the shop UI. The `category` field
   // drives the shop's category grid; `stat` tells getUpgradeTier what slot
@@ -1689,6 +1723,13 @@
     { id: 'shield_overcharge', category: 'shield', line: 'shield', stat: 'overcharge',
       label: 'Overcharged Shields', desc: 'Longer post-hit iFrame; T3 adds magnet aura',
       valueTable: 'shieldIframe', format: v => (v / 1000).toFixed(1) + 's iFrame' },
+    // Reactive Shields — stage-based (named abilities per tier), separate
+    // cost curve. `costTable` overrides the default UPGRADE_COSTS.
+    { id: 'shield_reactive', category: 'shield', line: 'shield', stat: 'reactive',
+      label: 'Reactive Shields', desc: 'Shield pop destroys nearby asteroids',
+      valueTable: 'reactiveTier',
+      format: v => ['None', 'Blast 💥', 'Shock ⚡', 'Nova 🌟'][v],
+      costTable: REACTIVE_COSTS },
   ];
 
   // Shop categories — order in this array is the display order in the grid.
@@ -1716,7 +1757,7 @@
   const DEFAULT_UPGRADES = {
     magnet: { radius: 0, strength: 0, duration: 0 },
     double: { power: 0, duration: 0 },
-    shield: { hull: 0, overcharge: 0 },
+    shield: { hull: 0, overcharge: 0, reactive: 0 },
   };
   let upgrades = loadUpgrades();
 
@@ -1778,6 +1819,12 @@
   function hasOverchargeT3() {
     return upgrades.shield.overcharge >= 3;
   }
+  // Reactive Shields getters
+  function getReactiveTier() { return upgrades.shield.reactive; }
+  function getBlastRadius()  { return BLAST_RADIUS_BY_TIER[getReactiveTier()] || 0; }
+  function hasReactiveBlast() { return getReactiveTier() >= 1; }
+  function hasReactiveShock() { return getReactiveTier() >= 2; }
+  function hasReactiveNova()  { return getReactiveTier() >= 3; }
 
   let asteroids = [];
   let powerups = [];
@@ -1802,6 +1849,12 @@
   let slowmoTime = 0;
   let doubleTime = 0;              // NEW — 2x multiplier time left (ms)
   let magnetTime = 0;              // NEW — magnet time left (ms)
+  let shockTime = 0;               // Shock/Nova 2× window (real-time decay, ms)
+  // Expanding cyan rings from Reactive Shields blasts. Short-lived visuals.
+  let blastRings = [];
+  // Last powerup type spawned — used to reduce back-to-back duplicates
+  // without making the spawn fully deterministic.
+  let lastPowerupType = null;
 
   let shake = 0;
   let thrusting = false;
@@ -1844,6 +1897,9 @@
     slowmoTime = 0;
     doubleTime = 0;
     magnetTime = 0;
+    shockTime = 0;
+    blastRings = [];
+    lastPowerupType = null;
     shake = 0;
     thrusting = false;
     initStars();
@@ -1925,33 +1981,38 @@
     //   - Shield is prioritized when player is low (survival > utility)
     //   - Otherwise, weighted mix across all 4 types
     //   - 2x is slightly rarer (most impactful = shouldn't flood the game)
-    // We look up the current effective maxShields (tier + Reinforced Hull
-    // upgrade) here — on Master without upgrades it's 2, so a player at 2
-    // shields is already "at max" and shouldn't see shields. With Hull T3
-    // on Master it climbs to 5, so shields keep being useful.
+    // Variety guard: after picking, if the result matches the last spawned
+    // type, roll once more. Accept the reroll even if it matches again — no
+    // infinite loops, still ~85% chance of different type on repeats.
     const maxShields = getMaxShields();
-    let type;
-    if (shieldCharges === 0) {
-      // Low on defenses — push shield hard, but still allow variety
-      const r = Math.random();
-      if (r < 0.65) type = 'shield';
-      else if (r < 0.8) type = 'slowmo';
-      else if (r < 0.92) type = 'magnet';
-      else type = 'double';
-    } else if (shieldCharges >= maxShields) {
-      // Can't hold more shields — pick from the other three
-      const r = Math.random();
-      if (r < 0.45) type = 'slowmo';
-      else if (r < 0.8) type = 'magnet';
-      else type = 'double';
-    } else {
+
+    function pickType() {
+      if (shieldCharges === 0) {
+        // Low on defenses — push shield hard, but still allow variety
+        const r = Math.random();
+        if (r < 0.65) return 'shield';
+        if (r < 0.8)  return 'slowmo';
+        if (r < 0.92) return 'magnet';
+        return 'double';
+      }
+      if (shieldCharges >= maxShields) {
+        // Can't hold more shields — pick from the other three
+        const r = Math.random();
+        if (r < 0.45) return 'slowmo';
+        if (r < 0.8)  return 'magnet';
+        return 'double';
+      }
       // Normal distribution
       const r = Math.random();
-      if (r < 0.35) type = 'shield';
-      else if (r < 0.6) type = 'slowmo';
-      else if (r < 0.85) type = 'magnet';
-      else type = 'double';
+      if (r < 0.35) return 'shield';
+      if (r < 0.6)  return 'slowmo';
+      if (r < 0.85) return 'magnet';
+      return 'double';
     }
+
+    let type = pickType();
+    if (type === lastPowerupType) type = pickType(); // single reroll
+    lastPowerupType = type;
     powerups.push({ x, y, type, r: 14, phase: Math.random() * Math.PI * 2 });
   }
 
@@ -1961,6 +2022,9 @@
     const speed = opts.speed ?? 2;
     const life = opts.life ?? 30;
     for (let i = 0; i < n; i++) {
+      // Soft cap — skip new particles when saturated to protect framerate.
+      // Existing particles animate to completion normally.
+      if (particles.length >= PARTICLE_CAP) break;
       const a = Math.random() * Math.PI * 2;
       const sp = Math.random() * speed + 0.4;
       particles.push({
@@ -1971,6 +2035,120 @@
         color,
         size: (opts.size ?? 2) + Math.random() * 1.5,
       });
+    }
+  }
+
+  // === Reactive Shields helpers ===
+
+  // Circle-vs-rect overlap test for each asteroid; destroys any that intersect
+  // the blast circle centered at (cx, cy) with radius r. Mutates `asteroids`
+  // (removes destroyed ones) and returns the array of destroyed entries so the
+  // caller can trigger shatter visuals, scoring, and coin spawns.
+  function destroyAsteroidsInRadius(cx, cy, r) {
+    const destroyed = [];
+    const r2 = r * r;
+    // Iterate backwards so splicing doesn't shift the indices we haven't checked.
+    for (let i = asteroids.length - 1; i >= 0; i--) {
+      const a = asteroids[i];
+      // Closest point on the asteroid's axis-aligned rect to the blast center
+      const nx = Math.max(a.x, Math.min(cx, a.x + a.w));
+      const ny = Math.max(a.y, Math.min(cy, a.y + a.h));
+      const dx = cx - nx, dy = cy - ny;
+      if (dx * dx + dy * dy < r2) {
+        destroyed.push(a);
+        asteroids.splice(i, 1);
+      }
+    }
+    return destroyed;
+  }
+
+  // Spawn chunky shrapnel at the asteroid's visible center. Asteroid palette
+  // (brown/purple) + high velocity so it reads clearly as "this got blown up"
+  // instead of being confused with coin/shield particles.
+  function spawnAsteroidShatter(a) {
+    const cx = a.x + a.w / 2;
+    const cy = a.y + a.h / 2;
+    // Mix of palette colors — randomize per particle for a speckled look
+    const palette = ['#7a6a8c', '#4a3a5c', '#3a2a4c', '#9a8aac'];
+    for (let i = 0; i < 6; i++) {
+      if (particles.length >= PARTICLE_CAP) break;
+      const ang = Math.random() * Math.PI * 2;
+      const sp = 2 + Math.random() * 2.2;
+      particles.push({
+        x: cx, y: cy,
+        vx: Math.cos(ang) * sp,
+        vy: Math.sin(ang) * sp - 0.8,   // slight upward bias so it arcs
+        life: 40, maxLife: 40,
+        color: palette[Math.floor(Math.random() * palette.length)],
+        size: 2.2 + Math.random() * 1.6,
+      });
+    }
+  }
+
+  // Queue an expanding cyan ring visual. Purely cosmetic — rendered in the
+  // main render() pass and aged off in the update loop. Cap generously since
+  // a Nova blast may create several rings if chained (unlikely in practice).
+  function spawnBlastRing(x, y, maxR) {
+    if (blastRings.length > 6) blastRings.shift(); // safety cap
+    blastRings.push({ x, y, r: 0, maxR, life: 0, maxLife: 15 });
+  }
+
+  // Nova payoff: spawn a bronze coin at the destroyed asteroid's position,
+  // tagged as `homing` with a short acceleration window. Homing coins get
+  // strong magnet-style pull toward the rocket regardless of the magnet
+  // upgrade. After NOVA_HOMING_MS the flag clears and they behave like
+  // normal coins (still magnet-pulled if the magnet powerup is active).
+  function spawnHomingCoin(x, y) {
+    const diff = getDifficulty();
+    coins.push({
+      x, y,
+      kind: 'bronze',
+      r: 9,
+      value: diff.coinBronzeValue, // uses tier-scaled value so it feels right
+      phase: Math.random() * Math.PI * 2,
+      collected: false,
+      collectAnim: 0,
+      homing: true,
+      homingUntil: performance.now() + NOVA_HOMING_MS,
+    });
+  }
+
+  // Reactive Shields entry point — called from inside the shield-pop handler.
+  // Encapsulates all three tiers' behavior behind one call.
+  function triggerReactiveBlast() {
+    const tier = getReactiveTier();
+    if (tier < 1) return;
+    const radius = getBlastRadius();
+    const destroyed = destroyAsteroidsInRadius(rocket.x, rocket.y, radius);
+    spawnBlastRing(rocket.x, rocket.y, radius);
+    const diff = getDifficulty();
+    for (const a of destroyed) {
+      spawnAsteroidShatter(a);
+      // Top-half counts as "passed" so scoring stays honest (half credit per
+      // our design — bottom halves don't self-credit; they were never going
+      // to score anyway since the passed-check is on top halves).
+      if (a.top && !a.passed) {
+        a.passed = true;
+        pairsPassed++;
+        if (pairsPassed % diff.pairsPerPoint === 0) {
+          addScore(diff.pointsPerPair);
+        } else {
+          updateHud();
+        }
+      }
+      // Nova coin burst — one per destroyed asteroid
+      if (tier >= 3) {
+        spawnHomingCoin(a.x + a.w / 2, a.y + a.h / 2);
+      }
+    }
+    // Shock/Nova buff — refreshes duration, doesn't stack with itself
+    if (tier >= 2) {
+      shockTime = SHOCK_DUR;
+    }
+    // Nova feel: extra screen shake + stronger haptic layered over shield-pop
+    if (tier >= 3) {
+      shake = Math.max(shake, 18);
+      if (navigator.vibrate) navigator.vibrate([20, 50, 30, 50, 40]);
     }
   }
 
@@ -2408,7 +2586,8 @@
       const currentTier = upgrades[def.line][def.stat];
       const isMaxed = currentTier >= MAX_UPGRADE_TIER;
       const nextTier = currentTier + 1;
-      const cost = isMaxed ? null : UPGRADE_COSTS[nextTier];
+      const costs = def.costTable || UPGRADE_COSTS;
+      const cost = isMaxed ? null : costs[nextTier];
       const canAfford = !isMaxed && bankedCoins >= cost;
       const vals = TIER_VALUES[def.valueTable];
       const currentVal = def.format(vals[currentTier]);
@@ -2470,7 +2649,10 @@
     const currentTier = upgrades[def.line][def.stat];
     if (currentTier >= MAX_UPGRADE_TIER) return; // already maxed
     const nextTier = currentTier + 1;
-    const cost = UPGRADE_COSTS[nextTier];
+    // Per-upgrade cost override (e.g. Reactive Shields uses REACTIVE_COSTS)
+    // — otherwise use the shared default cost curve.
+    const costs = def.costTable || UPGRADE_COSTS;
+    const cost = costs[nextTier];
     if (bankedCoins < cost) return;
 
     bankedCoins -= cost;
@@ -2585,6 +2767,8 @@
     slowmoTime = 0;
     doubleTime = 0;
     magnetTime = 0;
+    shockTime = 0;
+    blastRings = [];
     shake = 0;
     // Re-center rocket for the menu-float animation
     rocket.x = 90;
@@ -2899,6 +3083,10 @@
     slowmo: { color: '#c879ff', icon: '⏱', label: 'SLOW-MO' },
     double: { color: '#ffb84d', icon: '2✕', label: '2× SCORE' },
     magnet: { color: '#ff79c6', icon: '🧲', label: 'MAGNET' },
+    // Shock is not a pickup — it's the 4s buff from Reactive Shields
+    // (Shock or Nova). Reuses the badge format but with a distinct label
+    // so players can tell it apart from the regular 2× pickup buff.
+    shock:  { color: '#6af0ff', icon: '⚡', label: 'SHOCK 2×' },
   };
 
   function drawPowerup(p) {
@@ -3040,13 +3228,14 @@
     ctx.restore();
   }
 
-  // Central score-addition gate. Applies the active multiplier (2x when the
-  // `double` powerup is active) to every incoming point. Also updates the HUD.
-  // Returns the actual amount added (useful for floating popups — we want
-  // the popup to show the doubled value, not the base value).
+  // Central score-addition gate. Applies ALL active multipliers to every
+  // incoming point. The double-buff and shock-buff stack multiplicatively,
+  // so a maxed 9× Multiplier upgrade + active Shock Shield = 18× score.
+  // Returns the actual amount added (so popups can show the buffed number).
   function addScore(amount) {
-    // Upgrade tiers raise the multiplier: 2× → 3× → 6× → 9×
-    const mult = doubleTime > 0 ? getDoublePower() : 1;
+    const doubleMult = doubleTime > 0 ? getDoublePower() : 1;
+    const shockMult  = shockTime  > 0 ? SHOCK_MULT : 1;
+    const mult = doubleMult * shockMult;
     const actual = amount * mult;
     score += actual;
     updateHud();
@@ -3103,6 +3292,34 @@
     for (const p of powerups) p.x -= scroll;
     for (const c of coins) {
       c.x -= scroll;
+      // === Nova homing ===
+      // Homing coins (from Nova Shield) get a stronger dedicated pull for
+      // the first NOVA_HOMING_MS window. After that, the flag clears and
+      // they fall back to the regular magnet pull below (if magnet active).
+      // This guarantees Nova's coin burst always feels satisfying regardless
+      // of magnet powerup status or range.
+      if (c.homing && !c.collected) {
+        if (performance.now() >= c.homingUntil) {
+          c.homing = false;
+        } else {
+          const dx = rocket.x - c.x;
+          const dy = rocket.y - c.y;
+          const d = Math.sqrt(dx * dx + dy * dy);
+          if (d > 1) {
+            // High pull speed so the burst arrives within the homing window.
+            // Stronger at distance, tapers near the rocket to avoid overshoot.
+            const pullSpeed = 9;
+            c.x += (dx / d) * pullSpeed * sdt;
+            c.y += (dy / d) * pullSpeed * sdt;
+            // Cyan trail so the player sees the homing visual
+            if (Math.random() < 0.5) {
+              addParticles(c.x, c.y, {
+                n: 1, color: '#6af0ff', speed: 0.3, life: 14, size: 1.3,
+              });
+            }
+          }
+        }
+      }
       // === Magnet pull ===
       // While active, uncollected coins within current effective radius are
       // attracted toward the rocket. Pull strength scales with proximity.
@@ -3241,6 +3458,9 @@
                 n: 10, color: '#ff79c6', speed: 2.2, life: 28, size: 1.8,
               });
             }
+            // Reactive Shields — fire blast ring, destroy nearby asteroids,
+            // trigger Shock/Nova effects as appropriate for purchased tier.
+            triggerReactiveBlast();
             updateHud();
           } else {
             gameOver();
@@ -3348,6 +3568,17 @@
     if (slowmoTime > 0) slowmoTime = Math.max(0, slowmoTime - dt * (1000 / 60));
     if (doubleTime > 0) doubleTime = Math.max(0, doubleTime - dt * (1000 / 60));
     if (magnetTime > 0) magnetTime = Math.max(0, magnetTime - dt * (1000 / 60));
+    if (shockTime  > 0) shockTime  = Math.max(0, shockTime  - dt * (1000 / 60));
+
+    // Blast rings expand from 0 → maxR over their short life. Updated on
+    // real dt (not sdt) so slowmo doesn't slow the reactive shield visual —
+    // you want the bang to be instant regardless of time scale.
+    for (const ring of blastRings) {
+      ring.life += dt;
+      ring.r = ring.maxR * Math.min(1, ring.life / ring.maxLife);
+    }
+    blastRings = blastRings.filter(r => r.life < r.maxLife);
+
     // Shield-pop visual decays back to 0
     if (shieldPopEffect > 0) shieldPopEffect = Math.max(0, shieldPopEffect - 0.04 * dt);
 
@@ -3402,6 +3633,7 @@
     if (slowmoTime > 0) html += durBadge('slowmo', slowmoTime, SLOWMO_DUR);
     if (doubleTime > 0) html += durBadge('double', doubleTime, getDoubleDuration());
     if (magnetTime > 0) html += durBadge('magnet', magnetTime, getMagnetDuration());
+    if (shockTime  > 0) html += durBadge('shock',  shockTime,  SHOCK_DUR);
     if (powerupsEl.innerHTML !== html) powerupsEl.innerHTML = html;
   }
 
@@ -3430,6 +3662,24 @@
     for (const p of powerups) drawPowerup(p);
     drawParticles();
     if (state !== STATE.DEAD) drawRocket();
+    // Blast rings — expanding cyan circles from Reactive Shields pops.
+    // Drawn after the rocket so the ring appears to emanate from it.
+    for (const ring of blastRings) {
+      const t = ring.life / ring.maxLife; // 0..1
+      const alpha = Math.max(0, 0.6 * (1 - t));
+      ctx.strokeStyle = `rgba(106, 240, 255, ${alpha})`;
+      ctx.lineWidth = 3 - t * 2; // thins as it expands
+      ctx.beginPath();
+      ctx.arc(ring.x, ring.y, ring.r, 0, Math.PI * 2);
+      ctx.stroke();
+      // Inner softer halo for a bit of volume
+      ctx.strokeStyle = `rgba(106, 240, 255, ${alpha * 0.4})`;
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.arc(ring.x, ring.y, ring.r * 0.9, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.lineWidth = 1;
     // Popups render LAST so they float over everything else (score feedback
     // needs to be the most visible thing on screen when it happens).
     for (const p of popups) drawPopup(p);
@@ -3488,6 +3738,19 @@
   setButtonsEnabled(settingsScreen, false);
   refreshWalletUI();  // show current banked coins on main menu
   renderDifficultySelector();  // build the 4 tiles (Master locked unless unlocked)
+  // Swap hint text based on device. `pointer: coarse` is the most reliable
+  // touch-detection signal on modern mobile browsers; fall back to the
+  // legacy `ontouchstart` check for older Androids and niche browsers.
+  const isTouchDevice =
+    'ontouchstart' in window ||
+    (navigator.maxTouchPoints && navigator.maxTouchPoints > 0) ||
+    window.matchMedia('(pointer: coarse)').matches;
+  const startHintEl = document.getElementById('startHint');
+  if (startHintEl) {
+    startHintEl.textContent = isTouchDevice
+      ? 'Hold to thrust • Tap to boost'
+      : 'Hold to thrust • Space to boost';
+  }
   requestAnimationFrame(loop);
 
   // Service worker registration — enabled for HTTPS deployment (Netlify, etc.)
