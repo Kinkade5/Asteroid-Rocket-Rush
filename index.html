@@ -747,7 +747,10 @@
     gap: 6px;
     width: 92%;
     max-width: 380px;
-    margin-bottom: 24px;
+    /* Extra bottom margin covers the absolute-positioned tagline sitting
+       below each tile. 24 was fine for single-line; two-line taglines need
+       ~40px clearance. */
+    margin-bottom: 44px;
   }
   .diff-tile {
     position: relative;
@@ -803,16 +806,25 @@
     text-shadow: 0 2px 6px rgba(0,0,0,0.8);
   }
   .diff-tile-tagline {
+    /* Positioned absolutely *within the tile*, wraps if too long rather
+       than overflowing into adjacent tiles' taglines. Two-line allowance
+       gives breathing room for longer Expert/Master descriptions. */
     position: absolute;
-    bottom: -18px;
-    left: 50%;
-    transform: translateX(-50%);
+    bottom: -34px;
+    left: 0;
+    right: 0;
     font-size: 9px;
+    line-height: 1.25;
     color: #6b75a8;
-    white-space: nowrap;
+    text-align: center;
     opacity: 0;
     transition: opacity 0.2s;
     pointer-events: none;
+    padding: 0 2px;
+    /* Keep the text inside the tile's horizontal bounds; wrap to a second
+       line if the tagline is too long to fit in one. */
+    white-space: normal;
+    overflow-wrap: break-word;
   }
   .diff-tile.selected .diff-tile-tagline { opacity: 1; }
   /* Locked tiles always show their tagline — it's the unlock hint, and
@@ -915,7 +927,7 @@
     <button class="btn" id="startBtn">LAUNCH 🚀</button>
     <button class="btn btn-secondary" id="shopBtn" style="margin-top: 14px">SHOP 🛒</button>
     <div class="hint" id="startHint">Hold to thrust • Space to boost</div>
-    <div class="version-badge" id="versionBadge">v0.9.1</div>
+    <div class="version-badge" id="versionBadge">v0.9.3</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -983,7 +995,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.9.1';
+  const GAME_VERSION = 'v0.9.3';
 
   // ======================================================================
   // AUDIO ENGINE
@@ -1505,7 +1517,7 @@
   const DIFFICULTIES = {
     beginner: {
       id: 'beginner', name: 'Beginner',
-      color: '#6af0ff', icon: '🌱', tagline: 'Forgiving & friendly',
+      color: '#6af0ff', icon: '🌱', tagline: 'Wide gaps • 3 shields • 1× coins',
       gapSize: 220, gapMin: 160, gapRamp: 0.9,
       startingShields: 3, maxShields: 3,
       coinBronzeValue: 6, coinGoldValue: 21,
@@ -1514,7 +1526,7 @@
     },
     intermediate: {
       id: 'intermediate', name: 'Intermediate',
-      color: '#ffd86b', icon: '⭐', tagline: 'The classic challenge',
+      color: '#ffd86b', icon: '⭐', tagline: 'Standard gaps • 1 shield • 2× coins',
       gapSize: 180, gapMin: 130, gapRamp: 1.2,
       startingShields: 1, maxShields: 3,
       coinBronzeValue: 12, coinGoldValue: 42,
@@ -1523,7 +1535,7 @@
     },
     expert: {
       id: 'expert', name: 'Expert',
-      color: '#ff5a9e', icon: '🔥', tagline: 'For the fearless',
+      color: '#ff5a9e', icon: '🔥', tagline: 'Tight gaps • 1 shield • 5× coins',
       gapSize: 140, gapMin: 105, gapRamp: 1.6,
       startingShields: 1, maxShields: 3,
       coinBronzeValue: 30, coinGoldValue: 105,
@@ -1535,7 +1547,7 @@
     // stays visible while locked as the unlock condition.
     master: {
       id: 'master', name: 'Master',
-      color: '#c879ff', icon: '👁', tagline: 'No mercy, no shields',
+      color: '#c879ff', icon: '👁', tagline: 'Brutal gaps • 0 shields • 10× coins',
       locked: true,
       unlockHint: 'Beat Expert with 5,000+ score',
       gapSize: 115, gapMin: 85, gapRamp: 2.0,
