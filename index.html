@@ -626,6 +626,36 @@
     opacity: 1;
   }
 
+  /* "Can afford" indicator: a small glowing dot in the tile corner that
+     also tints the border. Fires the moment a purchase becomes possible. */
+  .category-tile.affordable {
+    border-color: rgba(106, 240, 255, 0.55);
+    box-shadow: 0 0 12px rgba(106, 240, 255, 0.2);
+  }
+  .category-tile-afford-dot {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #6af0ff;
+    box-shadow: 0 0 8px rgba(106, 240, 255, 0.9);
+    animation: afford-pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes afford-pulse {
+    0%, 100% { opacity: 0.7; transform: scale(1); }
+    50%      { opacity: 1;   transform: scale(1.15); }
+  }
+
+  /* Main-menu SHOP button gets the same "affordable" treatment — cyan
+     tint + gentle glow — so the player notices between runs. */
+  .btn.btn-secondary.affordable {
+    border-color: rgba(106, 240, 255, 0.55);
+    color: #c9f2ff;
+    box-shadow: 0 0 16px rgba(106, 240, 255, 0.25);
+  }
+
   .shop-list {
     display: flex;
     flex-direction: column;
@@ -927,7 +957,7 @@
     <button class="btn" id="startBtn">LAUNCH 🚀</button>
     <button class="btn btn-secondary" id="shopBtn" style="margin-top: 14px">SHOP 🛒</button>
     <div class="hint" id="startHint">Hold to thrust • Space to boost</div>
-    <div class="version-badge" id="versionBadge">v0.9.3</div>
+    <div class="version-badge" id="versionBadge">v0.10.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -995,7 +1025,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.9.3';
+  const GAME_VERSION = 'v0.10.0';
 
   // ======================================================================
   // AUDIO ENGINE
@@ -1161,6 +1191,26 @@
         if (!settings.sfxOn || !ctx) return;
         tone({ freq: 800, freqEnd: 300, dur: 0.45, type: 'sine', gain: 0.18 });
         tone({ freq: 400, freqEnd: 150, dur: 0.5, type: 'triangle', gain: 0.1, delay: 0.05 });
+      },
+      // 2× pickup — bright ascending two-note "bling" with a sparkle.
+      // Distinct from slowmoPickup (descending) so players' ears know
+      // which powerup they grabbed.
+      doublePickup() {
+        if (!settings.sfxOn || !ctx) return;
+        tone({ freq: 660, dur: 0.10, type: 'triangle', gain: 0.18 });
+        tone({ freq: 988, dur: 0.14, type: 'triangle', gain: 0.2, delay: 0.08 });
+        tone({ freq: 1320, dur: 0.18, type: 'sine', gain: 0.12, delay: 0.16 });
+        // Sparkle tail
+        tone({ freq: 1976, dur: 0.12, type: 'sine', gain: 0.07, delay: 0.22 });
+      },
+      // Magnet pickup — electric "zzzwip" with a rising filter sweep.
+      // Uses a short noise burst through a bandpass for a distinct
+      // electromagnetic character that separates it from shieldPickup.
+      magnetPickup() {
+        if (!settings.sfxOn || !ctx) return;
+        tone({ freq: 220, freqEnd: 680, dur: 0.22, type: 'sawtooth', gain: 0.14 });
+        tone({ freq: 440, freqEnd: 1320, dur: 0.20, type: 'sine', gain: 0.1, delay: 0.05 });
+        noise({ dur: 0.18, gain: 0.12, filterFreq: 800, sweepTo: 2400, filterQ: 3, type: 'bandpass' });
       },
       shieldPop() {
         if (!settings.sfxOn || !ctx) return;
@@ -1845,6 +1895,10 @@
   let popups = [];
   let particles = [];
   let stars = [];
+  // Background planets — a handful of tinted circles drifting slowly behind
+  // the stars. Pure atmosphere (no gameplay impact). Each planet has its
+  // own scroll speed (via `z` depth) so they parallax against each other.
+  let planets = [];
   let score = 0;
   let pairsPassed = 0;
   let distance = 0;
@@ -1884,6 +1938,41 @@
     }
   }
 
+  // Populate 3-4 planets with random palette, size, and depth. Spawned once
+  // at run start; as they scroll off the left edge they wrap to the right
+  // with fresh randomization so the backdrop never feels repetitive.
+  function initPlanets() {
+    planets = [];
+    // Preset palette — muted to avoid competing with foreground elements.
+    // Mix of warm/cool so at any moment you see a little color variety.
+    const palettes = [
+      { core: '#4a3870', rim: '#7a5ab0', glow: 'rgba(122, 90, 176, 0.18)' }, // violet
+      { core: '#3a5a70', rim: '#6a9ab0', glow: 'rgba(106, 154, 176, 0.15)' }, // teal
+      { core: '#704030', rim: '#b06848', glow: 'rgba(176, 104, 72, 0.15)' },  // rust
+      { core: '#2a3a5a', rim: '#5a7aa0', glow: 'rgba(90, 122, 160, 0.18)' },  // slate
+      { core: '#5a3070', rim: '#9a58b0', glow: 'rgba(154, 88, 176, 0.15)' },  // magenta
+    ];
+    const count = 3 + Math.floor(Math.random() * 2); // 3 or 4
+    for (let i = 0; i < count; i++) {
+      planets.push(makePlanet(palettes, true));
+    }
+  }
+
+  function makePlanet(palettes, initialSpawn) {
+    const pal = palettes[Math.floor(Math.random() * palettes.length)];
+    // z depth controls parallax speed + size variation. Deeper planets (lower
+    // z) move slower and appear smaller for the "far away" feel.
+    const z = 0.15 + Math.random() * 0.35; // 0.15 → 0.5
+    const r = 28 + z * 60 + Math.random() * 20; // ~32 to ~100px
+    // On initial spawn, distribute across the canvas; on respawn, start
+    // just off the right edge so players don't see them pop in.
+    const x = initialSpawn
+      ? Math.random() * BASE_W
+      : BASE_W + r + Math.random() * 60;
+    const y = 40 + Math.random() * (BASE_H - 80);
+    return { x, y, r, z, palette: pal };
+  }
+
   function reset() {
     rocket.x = 90;
     rocket.y = BASE_H / 2;
@@ -1916,6 +2005,7 @@
     shake = 0;
     thrusting = false;
     initStars();
+    initPlanets();
   }
 
   function spawnAsteroidPair(x) {
@@ -2449,6 +2539,11 @@
     const formatted = bankedCoins.toLocaleString();
     walletAmount.textContent = formatted;
     shopWallet.textContent = formatted;
+    // Main-menu SHOP button gets a subtle highlight when purchases are
+    // possible. Toggling a class keeps the visual in CSS for easy tweaking.
+    if (shopBtn) {
+      shopBtn.classList.toggle('affordable', shopHasAffordableUpgrade());
+    }
   }
 
   // ===== Difficulty selector =====
@@ -2541,6 +2636,29 @@
     return { owned, max };
   }
 
+  // Returns true if the player can afford at least one upgrade in the given
+  // category right now. Used to put a small "✨" glow on category tiles the
+  // moment a purchase becomes possible, so the shop feels responsive.
+  function categoryHasAffordableUpgrade(catId) {
+    for (const def of UPGRADE_DEFS) {
+      if (def.category !== catId) continue;
+      const tier = upgrades[def.line][def.stat];
+      if (tier >= MAX_UPGRADE_TIER) continue;
+      const costs = def.costTable || UPGRADE_COSTS;
+      if (bankedCoins >= costs[tier + 1]) return true;
+    }
+    return false;
+  }
+
+  // Returns true if there's any affordable upgrade anywhere in the shop.
+  // Used to decorate the main-menu SHOP button.
+  function shopHasAffordableUpgrade() {
+    for (const cat of CATEGORIES) {
+      if (categoryHasAffordableUpgrade(cat.id)) return true;
+    }
+    return false;
+  }
+
   // ===== Shop rendering — category grid =====
   function renderShopCategories() {
     refreshWalletUI();
@@ -2553,17 +2671,23 @@
     for (const cat of CATEGORIES) {
       const { owned, max } = getCategoryProgress(cat.id);
       const isMaxed = owned === max;
+      const affordable = !isMaxed && categoryHasAffordableUpgrade(cat.id);
       // Emoji detection: if the icon is a non-ASCII char, treat it as emoji.
       // Otherwise render with a colored text class (e.g. "2✕")
       const isEmoji = /\p{Extended_Pictographic}/u.test(cat.icon);
       const iconStyle = isEmoji ? '' : ` style="color:${cat.color}; font-size:38px"`;
       const iconClass = isEmoji ? 'category-tile-icon' : 'category-tile-icon text-icon';
+      // `affordable` CSS class drives the small glowing dot + gentle border tint.
+      // Maxed categories don't get it even if we somehow had leftover coins
+      // (nothing to buy = nothing to advertise).
+      const tileClasses = ['category-tile', affordable ? 'affordable' : ''].filter(Boolean).join(' ');
       html += `
-        <div class="category-tile" data-category="${cat.id}">
+        <div class="${tileClasses}" data-category="${cat.id}">
           <div class="category-tile-progress${isMaxed ? ' maxed' : ''}">${owned}/${max}</div>
           <div class="${iconClass}"${iconStyle}>${cat.icon}</div>
           <div class="category-tile-name">${cat.name.toUpperCase()}</div>
           <div class="category-tile-tagline">${cat.tagline}</div>
+          ${affordable ? '<div class="category-tile-afford-dot" title="New upgrade affordable"></div>' : ''}
         </div>`;
     }
     shopCategoriesEl.innerHTML = html;
@@ -2932,6 +3056,60 @@
       ctx.fillRect(s.x, s.y, s.s, s.s);
     }
     ctx.globalAlpha = 1;
+  }
+
+  // Draw + scroll the background planets. Called BEFORE drawStars so stars
+  // render on top (closer layer). Planets scroll much slower than stars
+  // (z * 1.4) so the parallax reads as "these are far away."
+  function drawPlanets(dt) {
+    // Same palette as initPlanets so respawns pick from the same set.
+    const palettes = [
+      { core: '#4a3870', rim: '#7a5ab0', glow: 'rgba(122, 90, 176, 0.18)' },
+      { core: '#3a5a70', rim: '#6a9ab0', glow: 'rgba(106, 154, 176, 0.15)' },
+      { core: '#704030', rim: '#b06848', glow: 'rgba(176, 104, 72, 0.15)' },
+      { core: '#2a3a5a', rim: '#5a7aa0', glow: 'rgba(90, 122, 160, 0.18)' },
+      { core: '#5a3070', rim: '#9a58b0', glow: 'rgba(154, 88, 176, 0.15)' },
+    ];
+    // Base scroll speed — much slower than stars so planets feel distant.
+    // During gameplay (PLAY/DEAD) we track SCROLL for consistency with the
+    // rest of the world; at menu we use a gentle drift so the backdrop still
+    // breathes without motion tied to asteroid speed.
+    const worldActive = state === STATE.PLAY || state === STATE.DEAD;
+    const baseSpeed = worldActive ? SCROLL * 0.12 : 0.25;
+    for (let i = 0; i < planets.length; i++) {
+      const p = planets[i];
+      p.x -= baseSpeed * p.z * dt;
+      // Wrap around: once fully off the left edge, respawn on the right with
+      // fresh randomization so the backdrop feels ever-changing.
+      if (p.x + p.r < 0) {
+        planets[i] = makePlanet(palettes, false);
+        continue;
+      }
+      // Outer atmospheric glow
+      const glowR = p.r * 1.8;
+      const glow = ctx.createRadialGradient(p.x, p.y, p.r * 0.6, p.x, p.y, glowR);
+      glow.addColorStop(0, p.palette.glow);
+      glow.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, glowR, 0, Math.PI * 2);
+      ctx.fill();
+      // Planet body — radial gradient from rim (lit side) to core (shadow).
+      // Offset center-of-light slightly so the planet looks 3D rather than
+      // flat. Offset direction is consistent for all planets so it reads as
+      // a distant shared light source (the "sun").
+      const body = ctx.createRadialGradient(
+        p.x - p.r * 0.35, p.y - p.r * 0.35, p.r * 0.1,
+        p.x, p.y, p.r
+      );
+      body.addColorStop(0, p.palette.rim);
+      body.addColorStop(0.6, p.palette.core);
+      body.addColorStop(1, '#0a0e20');
+      ctx.fillStyle = body;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   function drawRocket() {
@@ -3373,7 +3551,15 @@
         a.passed = true;
         pairsPassed++;
         if (pairsPassed % diff.pairsPerPoint === 0) {
-          addScore(diff.pointsPerPair);
+          const gained = addScore(diff.pointsPerPair);
+          // Small floating "+N" above the rocket so the player sees the
+          // reward fire. Uses the 'double' popup color if 2x is active so
+          // boosted values feel visually distinct from base scores.
+          popups.push({
+            x: rocket.x + 20, y: rocket.y - 10, text: '+' + gained,
+            kind: (doubleTime > 0 || shockTime > 0) ? 'double' : 'bronze',
+            life: 35, maxLife: 35,
+          });
         } else {
           updateHud(); // still update so asteroid count increments
         }
@@ -3534,14 +3720,14 @@
             x: p.x, y: p.y, text: getDoublePower() + '✕ SCORE',
             kind: 'double', life: 55, maxLife: 55,
           });
-          Audio.play.slowmoPickup(); // reusing for now — distinct sound later
+          Audio.play.doublePickup();
         } else if (p.type === 'magnet') {
           magnetTime = getMagnetDuration();
           popups.push({
             x: p.x, y: p.y, text: 'MAGNET',
             kind: 'magnet', life: 55, maxLife: 55,
           });
-          Audio.play.shieldPickup(); // reusing for now — distinct sound later
+          Audio.play.magnetPickup();
         }
 
         // Shared visual: particle burst in the powerup's color
@@ -3669,6 +3855,7 @@
     ctx.fillStyle = g;
     ctx.fillRect(-20, -20, BASE_W + 40, BASE_H + 40);
 
+    drawPlanets(dt);
     drawStars(dt);
     for (const a of asteroids) drawAsteroid(a);
     for (const c of coins) drawCoin(c);
@@ -3743,6 +3930,7 @@
   // Init
   resize();
   initStars();
+  initPlanets();
   // Ensure initial button state matches which overlay is visible on page load:
   // start screen is active (enabled), game over/shop/settings are hidden (disabled).
   setButtonsEnabled(startScreen, true);
