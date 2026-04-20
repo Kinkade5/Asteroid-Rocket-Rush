@@ -273,7 +273,7 @@
     backdrop-filter: blur(8px);
   }
   .pu-badge.shield { border-color: #6af0ff; color: #6af0ff; box-shadow: 0 0 12px rgba(106,240,255,0.4); }
-  .pu-badge.slowmo { border-color: #c879ff; color: #c879ff; box-shadow: 0 0 12px rgba(200,121,255,0.4); }
+  .pu-badge.slowmo { border-color: #6af0ff; color: #6af0ff; box-shadow: 0 0 12px rgba(106,240,255,0.45); }
   .pu-badge.double { border-color: #ffb84d; color: #ffb84d; box-shadow: 0 0 12px rgba(255,184,77,0.4); }
   .pu-badge.magnet { border-color: #ff79c6; color: #ff79c6; box-shadow: 0 0 12px rgba(255,121,198,0.4); }
   .pu-badge.shock  { border-color: #6af0ff; color: #6af0ff; box-shadow: 0 0 14px rgba(106,240,255,0.55); }
@@ -957,7 +957,7 @@
     <button class="btn" id="startBtn">LAUNCH 🚀</button>
     <button class="btn btn-secondary" id="shopBtn" style="margin-top: 14px">SHOP 🛒</button>
     <div class="hint" id="startHint">Hold to thrust • Space to boost</div>
-    <div class="version-badge" id="versionBadge">v0.10.0</div>
+    <div class="version-badge" id="versionBadge">v0.11.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1025,7 +1025,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.10.0';
+  const GAME_VERSION = 'v0.11.0';
 
   // ======================================================================
   // AUDIO ENGINE
@@ -1187,13 +1187,22 @@
         tone({ freq: 400, freqEnd: 1100, dur: 0.22, type: 'sawtooth', gain: 0.15 });
         tone({ freq: 800, freqEnd: 2000, dur: 0.2, type: 'sine', gain: 0.1, delay: 0.04 });
       },
-      slowmoPickup() {
+      // Hyperfocus pickup — a quick purposeful descending third followed by
+      // a bright "click in" tone, like a sci-fi targeting lens engaging.
+      // Replaces the old dreamy slow-mo sound; shorter and more alert to
+      // match Hyperfocus's new "sharpen your senses" identity.
+      focusPickup() {
         if (!settings.sfxOn || !ctx) return;
-        tone({ freq: 800, freqEnd: 300, dur: 0.45, type: 'sine', gain: 0.18 });
-        tone({ freq: 400, freqEnd: 150, dur: 0.5, type: 'triangle', gain: 0.1, delay: 0.05 });
+        // Two-note descending major third (purposeful, not sleepy)
+        tone({ freq: 1320, dur: 0.08, type: 'triangle', gain: 0.16 });
+        tone({ freq: 1047, dur: 0.10, type: 'triangle', gain: 0.18, delay: 0.07 });
+        // High crystalline "lock-in" ping at the end
+        tone({ freq: 2637, dur: 0.14, type: 'sine', gain: 0.09, delay: 0.14 });
+        // Subtle high-pass noise whoosh for the "vision sharpening" feel
+        noise({ dur: 0.18, gain: 0.08, filterFreq: 3500, filterQ: 2, type: 'highpass', delay: 0.02 });
       },
       // 2× pickup — bright ascending two-note "bling" with a sparkle.
-      // Distinct from slowmoPickup (descending) so players' ears know
+      // Distinct from focusPickup (descending) so players' ears know
       // which powerup they grabbed.
       doublePickup() {
         if (!settings.sfxOn || !ctx) return;
@@ -1573,6 +1582,7 @@
       coinBronzeValue: 6, coinGoldValue: 21,
       pairsPerPoint: 3, pointsPerPair: 1,
       powerupEveryPairs: 3,   // generous — rewards newer players
+      hyperfocusScale: 0.50,  // world at 50% speed — strong assist on easy mode
     },
     intermediate: {
       id: 'intermediate', name: 'Intermediate',
@@ -1582,6 +1592,7 @@
       coinBronzeValue: 12, coinGoldValue: 42,
       pairsPerPoint: 3, pointsPerPair: 2,
       powerupEveryPairs: 6,   // classic baseline cadence
+      hyperfocusScale: 0.55,  // classic slowdown feel
     },
     expert: {
       id: 'expert', name: 'Expert',
@@ -1591,6 +1602,7 @@
       coinBronzeValue: 30, coinGoldValue: 105,
       pairsPerPoint: 3, pointsPerPair: 5,
       powerupEveryPairs: 9,  // rarer — fewer safety nets
+      hyperfocusScale: 0.65,  // gentle assist — helps you READ the pattern
     },
     // Master is shown as a locked tile until unlocked. The `tagline` is
     // shown post-unlock (replacing the "???" mystery). The `unlockHint`
@@ -1605,6 +1617,7 @@
       coinBronzeValue: 60, coinGoldValue: 210,
       pairsPerPoint: 3, pointsPerPair: 10,
       powerupEveryPairs: 13,  // sparse — survive on skill
+      hyperfocusScale: 0.75,  // minimal assist — brief breath of focus
     },
   };
 
@@ -1702,7 +1715,17 @@
   // The `_BASE` values below are the baseline (tier 0) — what a brand-new
   // player with no upgrades gets. Actual runtime values come from the
   // getter functions further down, which factor in purchased tiers.
-  const SLOWMO_DUR = 4000;
+  const FOCUS_DUR = 4000;
+
+  // === Hyperfocus timescale getter ===
+  // Tier-aware world timescale while Hyperfocus is active. Lower value =
+  // stronger slowdown. Returns 1.0 when Hyperfocus isn't active so callers
+  // can use it unconditionally as a multiplier.
+  function getFocusTimescale() {
+    if (focusTime <= 0) return 1.0;
+    const s = getDifficulty().hyperfocusScale;
+    return typeof s === 'number' ? s : 0.55;
+  }
   const DOUBLE_DUR_BASE = 7000;
   const MAGNET_DUR_BASE = 6000;
   const MAGNET_RADIUS_BASE = 95;
@@ -1913,7 +1936,7 @@
   let shieldIFrameUntil = 0;
   let shieldPopEffect = 0;
   // Duration powerups
-  let slowmoTime = 0;
+  let focusTime = 0;               // Hyperfocus active time (ms)
   let doubleTime = 0;              // NEW — 2x multiplier time left (ms)
   let magnetTime = 0;              // NEW — magnet time left (ms)
   let shockTime = 0;               // Shock/Nova 2× window (real-time decay, ms)
@@ -1960,17 +1983,25 @@
 
   function makePlanet(palettes, initialSpawn) {
     const pal = palettes[Math.floor(Math.random() * palettes.length)];
-    // z depth controls parallax speed + size variation. Deeper planets (lower
-    // z) move slower and appear smaller for the "far away" feel.
-    const z = 0.15 + Math.random() * 0.35; // 0.15 → 0.5
-    const r = 28 + z * 60 + Math.random() * 20; // ~32 to ~100px
+    // z depth controls parallax speed. Deeper planets (lower z) move slower.
+    // Sized generously enough to read as actual planets, not just dots.
+    const z = 0.2 + Math.random() * 0.6; // 0.2 → 0.8
+    const r = 26 + z * 50 + Math.random() * 24; // ~32 to ~100px
     // On initial spawn, distribute across the canvas; on respawn, start
     // just off the right edge so players don't see them pop in.
     const x = initialSpawn
       ? Math.random() * BASE_W
       : BASE_W + r + Math.random() * 60;
     const y = 40 + Math.random() * (BASE_H - 80);
-    return { x, y, r, z, palette: pal };
+    // 25% of planets have rings — Saturn-style ellipse tilted so it reads
+    // as a ring going around the planet rather than a flat halo. Ring color
+    // picks from the palette so it looks part of the planet's system.
+    const hasRing = Math.random() < 0.25;
+    const ringTilt = (Math.random() * 0.35) + 0.25; // ellipse flattening, 0.25 → 0.6
+    const ringAngle = (Math.random() - 0.5) * 0.6;  // slight rotation, radians
+    const ringInner = 1.35 + Math.random() * 0.15;  // ring starts at ~1.35× planet radius
+    const ringOuter = 1.75 + Math.random() * 0.25;  // ring extends to ~1.75–2× planet radius
+    return { x, y, r, z, palette: pal, hasRing, ringTilt, ringAngle, ringInner, ringOuter };
   }
 
   function reset() {
@@ -1996,7 +2027,7 @@
     shieldCharges = getStartingShields();
     shieldIFrameUntil = 0;
     shieldPopEffect = 0;
-    slowmoTime = 0;
+    focusTime = 0;
     doubleTime = 0;
     magnetTime = 0;
     shockTime = 0;
@@ -2901,7 +2932,7 @@
     shieldCharges = getStartingShields();
     shieldIFrameUntil = 0;
     shieldPopEffect = 0;
-    slowmoTime = 0;
+    focusTime = 0;
     doubleTime = 0;
     magnetTime = 0;
     shockTime = 0;
@@ -3059,8 +3090,9 @@
   }
 
   // Draw + scroll the background planets. Called BEFORE drawStars so stars
-  // render on top (closer layer). Planets scroll much slower than stars
-  // (z * 1.4) so the parallax reads as "these are far away."
+  // render on top (closer layer). Planets scroll visibly slower than stars
+  // for a clear parallax effect, but fast enough that the backdrop actually
+  // changes during a run (takes ~15-25s for a typical planet to cross).
   function drawPlanets(dt) {
     // Same palette as initPlanets so respawns pick from the same set.
     const palettes = [
@@ -3070,21 +3102,29 @@
       { core: '#2a3a5a', rim: '#5a7aa0', glow: 'rgba(90, 122, 160, 0.18)' },
       { core: '#5a3070', rim: '#9a58b0', glow: 'rgba(154, 88, 176, 0.15)' },
     ];
-    // Base scroll speed — much slower than stars so planets feel distant.
-    // During gameplay (PLAY/DEAD) we track SCROLL for consistency with the
-    // rest of the world; at menu we use a gentle drift so the backdrop still
-    // breathes without motion tied to asteroid speed.
+    // Scroll speed: planets scroll at SCROLL × z × 0.5 during play. With
+    // SCROLL=2.4 and z in [0.2, 0.8], that's ~0.24 to 0.96 px/frame —
+    // visibly drifting, deeper planets slower. During menu, a constant
+    // gentle drift so the backdrop still breathes.
     const worldActive = state === STATE.PLAY || state === STATE.DEAD;
-    const baseSpeed = worldActive ? SCROLL * 0.12 : 0.25;
+    const baseSpeed = worldActive ? SCROLL * 0.5 : 1.0;
     for (let i = 0; i < planets.length; i++) {
       const p = planets[i];
       p.x -= baseSpeed * p.z * dt;
-      // Wrap around: once fully off the left edge, respawn on the right with
-      // fresh randomization so the backdrop feels ever-changing.
-      if (p.x + p.r < 0) {
+      // Wrap around: once fully off the left edge (including ring width),
+      // respawn on the right with fresh randomization.
+      const leftEdge = p.hasRing ? p.r * p.ringOuter : p.r;
+      if (p.x + leftEdge < 0) {
         planets[i] = makePlanet(palettes, false);
         continue;
       }
+
+      // --- Ring back half (drawn first, so the planet body covers where
+      //     the ring passes behind it) ---
+      if (p.hasRing) {
+        drawPlanetRing(p, true);
+      }
+
       // Outer atmospheric glow
       const glowR = p.r * 1.8;
       const glow = ctx.createRadialGradient(p.x, p.y, p.r * 0.6, p.x, p.y, glowR);
@@ -3094,22 +3134,78 @@
       ctx.beginPath();
       ctx.arc(p.x, p.y, glowR, 0, Math.PI * 2);
       ctx.fill();
-      // Planet body — radial gradient from rim (lit side) to core (shadow).
-      // Offset center-of-light slightly so the planet looks 3D rather than
-      // flat. Offset direction is consistent for all planets so it reads as
-      // a distant shared light source (the "sun").
+
+      // Planet body — radial gradient from lit rim to shadow core, offset
+      // toward upper-left for a consistent "distant sun" lighting feel.
+      // Critical: the gradient stops at the palette core (not fading to
+      // black), so the planet reads as a SOLID body, not transparent.
       const body = ctx.createRadialGradient(
         p.x - p.r * 0.35, p.y - p.r * 0.35, p.r * 0.1,
         p.x, p.y, p.r
       );
       body.addColorStop(0, p.palette.rim);
-      body.addColorStop(0.6, p.palette.core);
-      body.addColorStop(1, '#0a0e20');
+      body.addColorStop(0.55, p.palette.core);
+      body.addColorStop(1, p.palette.core); // keep edge solid (was fading to dark bg)
       ctx.fillStyle = body;
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
       ctx.fill();
+
+      // Subtle terminator shadow — darker crescent on the shadow side for
+      // the 3D feel, without making the planet look semi-transparent.
+      const shadow = ctx.createRadialGradient(
+        p.x + p.r * 0.3, p.y + p.r * 0.3, p.r * 0.2,
+        p.x + p.r * 0.1, p.y + p.r * 0.1, p.r
+      );
+      shadow.addColorStop(0, 'rgba(0, 0, 0, 0.45)');
+      shadow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = shadow;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fill();
+
+      // --- Ring front half (drawn after body to appear in front) ---
+      if (p.hasRing) {
+        drawPlanetRing(p, false);
+      }
     }
+  }
+
+  // Draws one half of a Saturn-style ring. `back === true` draws the half
+  // behind the planet (clipped to the top half of the ring ellipse);
+  // `back === false` draws the half in front (bottom half). Together they
+  // form a ring that the planet body sits "inside of."
+  function drawPlanetRing(p, back) {
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.ringAngle);
+    const innerR = p.r * p.ringInner;
+    const outerR = p.r * p.ringOuter;
+    const flatY = p.ringTilt; // ellipse vertical squish (0.25–0.6)
+    // Clip to top half (back) or bottom half (front) of the ring ellipse
+    ctx.beginPath();
+    if (back) {
+      ctx.rect(-outerR * 1.2, -outerR, outerR * 2.4, outerR);
+    } else {
+      ctx.rect(-outerR * 1.2, 0, outerR * 2.4, outerR);
+    }
+    ctx.clip();
+    // Ring fill — outer ellipse minus inner ellipse (even-odd trick)
+    ctx.fillStyle = p.palette.rim;
+    ctx.globalAlpha = 0.55;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, outerR, outerR * flatY, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, innerR, innerR * flatY, 0, 0, Math.PI * 2, true); // reverse winding
+    ctx.fill('evenodd');
+    // Slight highlight at the outer edge for definition
+    ctx.globalAlpha = 0.8;
+    ctx.strokeStyle = p.palette.rim;
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, outerR, outerR * flatY, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.restore();
   }
 
   function drawRocket() {
@@ -3271,7 +3367,9 @@
   // color + icon glyph. Used both by drawPowerup and by the HUD badges.
   const POWERUP_DEFS = {
     shield: { color: '#6af0ff', icon: '🛡', label: 'SHIELD' },
-    slowmo: { color: '#c879ff', icon: '⏱', label: 'SLOW-MO' },
+    // 'slowmo' is the internal type id (kept stable for spawn logic), but
+    // the visible identity is now Hyperfocus — cyan, target icon, "FOCUS".
+    slowmo: { color: '#6af0ff', icon: '🎯', label: 'FOCUS' },
     double: { color: '#ffb84d', icon: '2✕', label: '2× SCORE' },
     magnet: { color: '#ff79c6', icon: '🧲', label: 'MAGNET' },
     // Shock is not a pickup — it's the 4s buff from Reactive Shields
@@ -3443,16 +3541,19 @@
 
   // --- Update ---
   function update(dt) {
-    const timeScale = slowmoTime > 0 ? 0.45 : 1.0;
-    const sdt = dt * timeScale;
+    // Hyperfocus uses a tier-aware world timescale — only the WORLD slows
+    // (asteroids, coins, powerups, scroll). The rocket's physics stay on
+    // full dt, so gravity + thrust feel the same. This is the key design
+    // shift from old "slow-mo" which slowed everything including the ship.
+    const worldScale = getFocusTimescale();
+    const sdt = dt * worldScale;
 
     // Sync the looped thrust audio to whatever `thrusting` is right now.
-    // Cheap idempotent call — only actually starts/stops the sound on flips.
     syncThrustSound();
 
-    // Hold-to-thrust
+    // Hold-to-thrust — rocket physics run on raw dt, unscaled by Hyperfocus
     if (state === STATE.PLAY && thrusting) {
-      rocket.vy += THRUST * sdt;
+      rocket.vy += THRUST * dt;
       if (Math.random() < 0.65) {
         addParticles(rocket.x - 14, rocket.y + 4, {
           n: 2, color: '#ffb84d', speed: 1.8, life: 18, vx: -2.5,
@@ -3460,16 +3561,17 @@
       }
     }
 
-    // Physics
-    rocket.vy += GRAVITY * sdt;
-    // NEW: velocity clamps — prevents runaway up-speed and tames free-fall
+    // Physics — rocket runs on raw dt so Hyperfocus doesn't remove the
+    // challenge of gravity (just the world is perceived slower)
+    rocket.vy += GRAVITY * dt;
     if (rocket.vy < MAX_UP_VY) rocket.vy = MAX_UP_VY;
     if (rocket.vy > MAX_DOWN_VY) rocket.vy = MAX_DOWN_VY;
 
-    rocket.y += rocket.vy * sdt;
+    rocket.y += rocket.vy * dt;
     rocket.rot = Math.max(-0.5, Math.min(1.0, rocket.vy * 0.08));
 
-    // Scroll world
+    // Scroll world — uses sdt (scaled) so the world visibly slows during
+    // Hyperfocus. Rocket physics above stay on raw dt.
     const scroll = SCROLL * sdt;
     distance += scroll;
 
@@ -3706,12 +3808,12 @@
           }
           Audio.play.shieldPickup();
         } else if (p.type === 'slowmo') {
-          slowmoTime = SLOWMO_DUR;
+          focusTime = FOCUS_DUR;
           popups.push({
-            x: p.x, y: p.y, text: 'SLOW-MO',
+            x: p.x, y: p.y, text: 'HYPERFOCUS',
             kind: 'slowmo', life: 50, maxLife: 50,
           });
-          Audio.play.slowmoPickup();
+          Audio.play.focusPickup();
         } else if (p.type === 'double') {
           // 2× multiplier — stacks by refreshing duration, not doubling it.
           // (Stacking durations could be OP; refresh is standard rogue-like.)
@@ -3764,7 +3866,7 @@
 
     // All duration-based powerups decay on real time (not slowmo-scaled) so
     // slowmo can't extend itself or the others.
-    if (slowmoTime > 0) slowmoTime = Math.max(0, slowmoTime - dt * (1000 / 60));
+    if (focusTime  > 0) focusTime  = Math.max(0, focusTime  - dt * (1000 / 60));
     if (doubleTime > 0) doubleTime = Math.max(0, doubleTime - dt * (1000 / 60));
     if (magnetTime > 0) magnetTime = Math.max(0, magnetTime - dt * (1000 / 60));
     if (shockTime  > 0) shockTime  = Math.max(0, shockTime  - dt * (1000 / 60));
@@ -3829,7 +3931,7 @@
       const expiring = timeLeft < WARN_MS ? ' expiring' : '';
       return `<div class="pu-badge ${type}${expiring}">${def.icon} ${def.label} <div class="pu-bar"><div style="transform:scaleX(${pct})"></div></div></div>`;
     }
-    if (slowmoTime > 0) html += durBadge('slowmo', slowmoTime, SLOWMO_DUR);
+    if (focusTime  > 0) html += durBadge('slowmo', focusTime, FOCUS_DUR);
     if (doubleTime > 0) html += durBadge('double', doubleTime, getDoubleDuration());
     if (magnetTime > 0) html += durBadge('magnet', magnetTime, getMagnetDuration());
     if (shockTime  > 0) html += durBadge('shock',  shockTime,  SHOCK_DUR);
@@ -3857,6 +3959,27 @@
 
     drawPlanets(dt);
     drawStars(dt);
+    // Hyperfocus: draw cyan halos around asteroids and coins BEFORE their
+    // bodies render, so the silhouette glow reads as "these are the objects
+    // to track." Gentle pulse keeps it feeling alive without distracting.
+    if (focusTime > 0) {
+      const pulse = 0.45 + 0.15 * Math.sin(performance.now() / 180);
+      ctx.strokeStyle = `rgba(106, 240, 255, ${pulse})`;
+      ctx.lineWidth = 2;
+      for (const a of asteroids) {
+        ctx.beginPath();
+        ctx.rect(a.x - 2, a.y - 2, a.w + 4, a.h + 4);
+        ctx.stroke();
+      }
+      ctx.fillStyle = `rgba(106, 240, 255, ${pulse * 0.5})`;
+      for (const c of coins) {
+        if (c.collected) continue;
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, c.r + 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.lineWidth = 1;
+    }
     for (const a of asteroids) drawAsteroid(a);
     for (const c of coins) drawCoin(c);
     for (const p of powerups) drawPowerup(p);
@@ -3884,9 +4007,41 @@
     // needs to be the most visible thing on screen when it happens).
     for (const p of popups) drawPopup(p);
 
-    if (slowmoTime > 0) {
-      ctx.fillStyle = 'rgba(200, 121, 255, 0.08)';
+    // === Hyperfocus visual identity ===
+    // Cyan edge vignette + a one-time scanline sweep at activation. The
+    // vignette sits at the screen edges (not a full-screen tint) so gameplay
+    // legibility isn't affected. Scanline sweeps down once per activation
+    // using the time remaining vs duration to place the line.
+    if (focusTime > 0) {
+      // Edge vignette — radial gradient from center to corners
+      const vg = ctx.createRadialGradient(
+        BASE_W / 2, BASE_H / 2, Math.min(BASE_W, BASE_H) * 0.35,
+        BASE_W / 2, BASE_H / 2, Math.max(BASE_W, BASE_H) * 0.7
+      );
+      // Alpha pulses very gently so the effect breathes
+      const pulse = 0.18 + 0.06 * Math.sin(performance.now() / 220);
+      vg.addColorStop(0, 'rgba(106, 240, 255, 0)');
+      vg.addColorStop(0.65, 'rgba(106, 240, 255, 0)');
+      vg.addColorStop(1, `rgba(106, 240, 255, ${pulse})`);
+      ctx.fillStyle = vg;
       ctx.fillRect(-20, -20, BASE_W + 40, BASE_H + 40);
+
+      // One-time scan-line sweep at activation — runs through the first
+      // ~500ms of the buff. Creates a bright cyan horizontal line that
+      // travels top-to-bottom once, like a targeting lens initializing.
+      const sweepProgress = (FOCUS_DUR - focusTime) / 500;
+      if (sweepProgress >= 0 && sweepProgress <= 1) {
+        const sweepY = sweepProgress * BASE_H;
+        const sweepAlpha = 0.35 * (1 - sweepProgress); // fades as it descends
+        ctx.fillStyle = `rgba(180, 250, 255, ${sweepAlpha})`;
+        ctx.fillRect(0, sweepY - 1, BASE_W, 2);
+        // Soft glow above the line
+        const glow = ctx.createLinearGradient(0, sweepY - 20, 0, sweepY);
+        glow.addColorStop(0, 'rgba(106, 240, 255, 0)');
+        glow.addColorStop(1, `rgba(106, 240, 255, ${sweepAlpha * 0.4})`);
+        ctx.fillStyle = glow;
+        ctx.fillRect(0, sweepY - 20, BASE_W, 20);
+      }
     }
     if (doubleTime > 0) {
       // Subtle gold tint with a gentle pulse so player feels the bonus is active
