@@ -726,6 +726,7 @@
     border-radius: 3px;
   }
   .upgrade-card {
+    position: relative; /* anchor for v0.16.0 NEW! badge positioned absolutely */
     display: grid;
     grid-template-columns: 1fr auto;
     grid-template-rows: auto auto;
@@ -735,6 +736,26 @@
     border: 1px solid rgba(255,255,255,0.08);
     border-radius: 10px;
     align-items: center;
+  }
+  /* === v0.16.0 — NEW! badge on upgrade cards === */
+  /* Shows on the card the first render after an upgrade's next tier has
+     become affordable. Bright cyan so it's hard to miss but doesn't pulse
+     or animate (no noise added to the shop UX). Positioned top-right
+     corner, overlapping the card border for the classic "sticker" feel. */
+  .upgrade-new-badge {
+    position: absolute;
+    top: -7px;
+    right: 12px;
+    background: linear-gradient(180deg, #6af0ff 0%, #4fa8d8 100%);
+    color: #0b0f26;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+    padding: 2px 9px;
+    border-radius: 999px;
+    box-shadow: 0 2px 10px rgba(106, 240, 255, 0.45);
+    z-index: 2;
+    pointer-events: none;
   }
   .upgrade-header {
     grid-column: 1;
@@ -980,6 +1001,16 @@
     opacity: 0.85;
   }
 
+  /* === v0.16.0 — SHOP MAXED celebration variant === */
+  /* Gold variant of .unlock-toast, fires once when every upgrade hits
+     max tier. Color matches the coin/purchase palette (rather than the
+     violet Master unlock toast) to tie the celebration to the shop itself. */
+  .shop-maxed-toast {
+    background: linear-gradient(180deg, #ffd86b 0%, #ff9a3c 100%);
+    color: #4a2a00;
+    box-shadow: 0 0 40px rgba(255, 216, 107, 0.55), 0 8px 30px rgba(0,0,0,0.5);
+  }
+
   /* === Phase 2 main-menu scoreboard tile === */
   /* Vague progress indicator toward the NG+ unlock threshold. Deliberately
      non-interactive — it's a tease, not a button. Subtle violet→cyan
@@ -1134,6 +1165,11 @@
     <div>MASTER UNLOCKED</div>
     <div class="unlock-toast-sub">A new challenge awaits</div>
   </div>
+  <!-- v0.16.0 — SHOP MAXED celebration (fires once when all upgrades reach max) -->
+  <div id="shopMaxedToast" class="unlock-toast shop-maxed-toast">
+    <div>SHOP MAXED!</div>
+    <div class="unlock-toast-sub">Every upgrade at max tier</div>
+  </div>
   <div id="flash"></div>
   <div id="startScreen" class="overlay active">
     <button class="settings-btn" id="settingsBtn" aria-label="Settings">⚙</button>
@@ -1154,7 +1190,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.15.0</div>
+    <div class="version-badge" id="versionBadge">v0.16.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1235,7 +1271,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.15.0';
+  const GAME_VERSION = 'v0.16.0';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -1822,6 +1858,8 @@
   const tierBadge = document.getElementById('tierBadge');
   const gameoverTier = document.getElementById('gameoverTier');
   const unlockToast = document.getElementById('unlockToast');
+  // v0.16.0 — one-time "SHOP MAXED!" celebration toast
+  const shopMaxedToast = document.getElementById('shopMaxedToast');
 
   // Render version from the single source of truth (GAME_VERSION above)
   if (versionBadge) versionBadge.textContent = GAME_VERSION;
@@ -2275,6 +2313,59 @@
   }
   function saveBankedCoins() {
     try { localStorage.setItem('rocketRushBankedCoins', String(bankedCoins)); } catch (_) {}
+  }
+
+  // ======================================================================
+  // v0.16.0 — "NEW!" popup milestone tracking
+  // ======================================================================
+  // Per-upgrade, tracks the highest tier the player has seen as affordable.
+  // When rendering an upgrade card, if the next-purchasable tier is above
+  // the milestone AND the player can currently afford it, the card shows
+  // a cyan "NEW!" badge. The milestone advances the moment the card renders
+  // (implicit acknowledgement) — badge won't re-appear on subsequent views
+  // until the player purchases up a tier and another affordability step
+  // becomes new.
+  //
+  // Existing-save migration: fresh players have {} — on first v0.16.0
+  // shop open, every currently-affordable upgrade will show NEW! once.
+  // Treated as a feature, not a bug — it's a rediscovery prompt.
+  let upgradeAffordableSeen = loadUpgradeAffordableSeen();
+
+  function loadUpgradeAffordableSeen() {
+    try {
+      const raw = localStorage.getItem('rocketRushUpgradeAffordableSeen');
+      if (raw) return JSON.parse(raw) || {};
+    } catch (_) {}
+    return {};
+  }
+  function saveUpgradeAffordableSeen() {
+    try {
+      localStorage.setItem('rocketRushUpgradeAffordableSeen', JSON.stringify(upgradeAffordableSeen));
+    } catch (_) {}
+  }
+
+  // Returns true if the upgrade's next-purchasable tier has become
+  // affordable AND we haven't acknowledged it yet via a render.
+  function isUpgradeNewlyAffordable(def) {
+    const currentTier = upgrades[def.line][def.stat];
+    if (currentTier >= MAX_UPGRADE_TIER) return false;
+    const costs = def.costTable || UPGRADE_COSTS;
+    const nextCost = costs[currentTier + 1];
+    if (bankedCoins < nextCost) return false;
+    const seen = upgradeAffordableSeen[def.id] || 0;
+    return seen < currentTier + 1;
+  }
+
+  // Mark the upgrade's next-purchasable tier as "seen affordable" so its
+  // NEW! badge won't show again at this tier level. Called from the card
+  // builder when the badge is rendered.
+  function markUpgradeAffordableSeen(def) {
+    const currentTier = upgrades[def.line][def.stat];
+    const milestone = Math.max(upgradeAffordableSeen[def.id] || 0, currentTier + 1);
+    if (upgradeAffordableSeen[def.id] !== milestone) {
+      upgradeAffordableSeen[def.id] = milestone;
+      saveUpgradeAffordableSeen();
+    }
   }
 
   // ======================================================================
@@ -3286,6 +3377,36 @@
     return false;
   }
 
+  // === v0.16.0 — SHOP MAXED celebration ===
+  // True when every upgrade line in UPGRADE_DEFS has reached MAX_UPGRADE_TIER.
+  // Master upgrades (MASTER_UPGRADE_DEFS) are intentionally excluded — they
+  // live on a different tab with a different currency, and the "shop maxed"
+  // milestone is specifically about the coins-economy progression.
+  function isShopMaxed() {
+    return UPGRADE_DEFS.every(def => {
+      return upgrades[def.line][def.stat] >= MAX_UPGRADE_TIER;
+    });
+  }
+
+  // Triggers the SHOP MAXED! toast one time ever — guarded by the persistent
+  // `rocketRushShopMaxedSeen` flag. Called both (a) after any successful
+  // purchase (catches the buy-that-completes-the-shop moment) and (b) on
+  // shop open (catches already-maxed saves, including anyone upgrading to
+  // v0.16.0 with a maxed collection).
+  function checkShopMaxedCelebration() {
+    if (!isShopMaxed()) return;
+    if (localStorage.getItem('rocketRushShopMaxedSeen') === '1') return;
+    try { localStorage.setItem('rocketRushShopMaxedSeen', '1'); } catch (_) {}
+    if (!shopMaxedToast) return;
+    shopMaxedToast.classList.add('show');
+    setTimeout(() => shopMaxedToast.classList.remove('show'), 3500);
+    if (navigator.vibrate) navigator.vibrate([30, 60, 30, 60, 80]);
+    // Layered coin-gold chimes for a "big payoff" feel — two quick plays
+    // give the celebration audio identity without needing a new SFX.
+    Audio.play.coinGold();
+    setTimeout(() => Audio.play.coinGold(), 120);
+  }
+
   // ===== Shop rendering — segmented control (UPGRADES / HANGAR tabs) =====
   // Rebuilt on every render so the `.active` highlight always reflects
   // currentShopTab. Cheap enough — the control is tiny (2-3 buttons).
@@ -3430,8 +3551,19 @@
       ? `<div class="upgrade-values">Max tier reached</div>`
       : `<div class="upgrade-values">${currentVal}<span class="arrow">→</span><span class="next">${nextVal}</span></div>`;
 
+    // v0.16.0 — "NEW!" badge when this tier has become affordable for the
+    // first time. Marking-as-seen on render means the badge shows on the
+    // render that puts it in front of the player, then stops. Next tier
+    // getting affordable later will raise a fresh NEW! naturally.
+    let newBadgeHtml = '';
+    if (isUpgradeNewlyAffordable(def)) {
+      newBadgeHtml = '<div class="upgrade-new-badge">NEW!</div>';
+      markUpgradeAffordableSeen(def);
+    }
+
     return `
         <div class="upgrade-card">
+          ${newBadgeHtml}
           <div class="upgrade-header">
             <div class="upgrade-label">${def.label}</div>
             <div class="upgrade-tier-pips">${pips}</div>
@@ -3510,6 +3642,9 @@
     Audio.play.coinGold(); // satisfying purchase chime
     if (navigator.vibrate) navigator.vibrate(20);
     refreshShopView();
+    // v0.16.0 — if this purchase completed the collection, fire the
+    // SHOP MAXED! celebration toast (one-time, guarded internally).
+    checkShopMaxedCelebration();
   }
 
   shopBtn.addEventListener('pointerdown', (e) => {
@@ -3522,6 +3657,11 @@
     renderShopCategories();
     hideOverlay(startScreen);
     showOverlay(shopScreen);
+    // v0.16.0 — catches the edge case where a player's save is already
+    // fully maxed (e.g. pre-v0.16.0 completist opening the shop for the
+    // first time after update). 800ms delay lets the shop paint in first
+    // so the celebration lands over the shop view, not over the menu.
+    setTimeout(checkShopMaxedCelebration, 800);
   });
 
   // Back button: if inside a category, pops to the category grid.
@@ -4048,6 +4188,47 @@
       ctx.fill();
     }
     ctx.restore();
+  }
+
+  // === v0.16.0 — Deflection Field shimmer ===
+  // Visualizes the Deflection Field upgrade's force zone during Hyperfocus.
+  // Draws a cyan gradient on each asteroid's exposed face (bottom of top
+  // asteroids, top of bottom asteroids) — but ONLY on asteroids within the
+  // rocket's horizontal reach, matching the physics gate in update(). The
+  // gradient extends from the face into the gap by DEFLECTION_RANGE pixels,
+  // fading from peak alpha at the face to transparent at the range edge.
+  //
+  // Peak alpha scales with tier (T1 subtle, T2 noticeable, T3 prominent)
+  // and is dampened by Accessibility.sweepScale() under reduced motion to
+  // keep the treatment consistent with other Hyperfocus visuals.
+  //
+  // No animation — the force field is steady-state, so a pulsing visual
+  // would misrepresent the mechanic. Static gradient reads as "shielding."
+  function drawDeflectionField() {
+    if (focusTime <= 0) return;
+    const tier = getDeflectionTier();
+    if (tier === 0) return;
+    const range = DEFLECTION_RANGE[tier];
+    const peakAlpha = [0, 0.16, 0.26, 0.40][tier] * Accessibility.sweepScale();
+    for (const a of asteroids) {
+      // Match the update() gate: only asteroids we're flying into
+      if (rocket.x < a.x - 4 || rocket.x > a.x + a.w + 4) continue;
+      if (a.top) {
+        // Face at bottom of top asteroid — gradient fades down into gap
+        const grad = ctx.createLinearGradient(0, a.h, 0, a.h + range);
+        grad.addColorStop(0, `rgba(106, 240, 255, ${peakAlpha})`);
+        grad.addColorStop(1, 'rgba(106, 240, 255, 0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(a.x, a.h, a.w, range);
+      } else {
+        // Face at top of bottom asteroid — gradient fades up into gap
+        const grad = ctx.createLinearGradient(0, a.y, 0, a.y - range);
+        grad.addColorStop(0, `rgba(106, 240, 255, ${peakAlpha})`);
+        grad.addColorStop(1, 'rgba(106, 240, 255, 0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(a.x, a.y - range, a.w, range);
+      }
+    }
   }
 
   // Powerup visual definitions — single source of truth for each type's
@@ -4739,6 +4920,11 @@
       ctx.lineWidth = 1;
     }
     for (const a of asteroids) drawAsteroid(a);
+    // v0.16.0 — Deflection Field shimmer. Gradient glow on each asteroid's
+    // exposed face (within rocket's horizontal reach) during Hyperfocus.
+    // Visualizes where the force field is active. No animation — the field
+    // itself is steady-state. Scales with deflection tier.
+    drawDeflectionField();
     for (const c of coins) drawCoin(c);
     for (const p of powerups) drawPowerup(p);
     drawParticles();
