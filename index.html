@@ -1190,7 +1190,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.20.0</div>
+    <div class="version-badge" id="versionBadge">v0.20.1</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1271,7 +1271,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.20.0';
+  const GAME_VERSION = 'v0.20.1';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -2165,14 +2165,20 @@
   // Shop's Full Autopilot upgrade instead, which requires this upgrade
   // at T3 AND the Master-tier buy (+100% strength when both owned).
   //
+  // v0.20.1 — still felt erratic in playtest: conservative combo of
+  // (a) bumping damping ~50% across tiers to kill residual oscillation,
+  // and (b) widening all deadzones so a well-threaded rocket isn't
+  // nudged by tiny off-center deltas. Strength and range untouched —
+  // the upgrade should still feel meaningfully helpful, just smoother.
+  //
   //   GUIDANCE_STRENGTH: pull coefficient per unit distance from center
   //   GUIDANCE_DAMPING:  velocity opposition — the smoothness knob
   //   GUIDANCE_RANGE:    how far AHEAD (in x) the system sees gaps
   //   GUIDANCE_DEADZONE: vertical distance (px) from center with zero pull
   const GUIDANCE_STRENGTH = [0, 0.25, 0.50, 0.75];
-  const GUIDANCE_DAMPING  = [0, 0.08, 0.12, 0.16];
+  const GUIDANCE_DAMPING  = [0, 0.12, 0.18, 0.24];
   const GUIDANCE_RANGE    = [0, 100,  140,  180];
-  const GUIDANCE_DEADZONE = [0, 30,   20,   15];
+  const GUIDANCE_DEADZONE = [0, 40,   30,   25];
 
   // === Master Autopilot modifiers (v0.20.0 — NG+ capstone) ===
   // Gates behind (a) Full Autopilot purchased in Master Shop AND
