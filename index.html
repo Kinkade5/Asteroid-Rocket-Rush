@@ -1190,7 +1190,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.19.0</div>
+    <div class="version-badge" id="versionBadge">v0.20.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1271,7 +1271,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.19.0';
+  const GAME_VERSION = 'v0.20.0';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -2158,32 +2158,31 @@
   // determines pull strength (further = stronger), with a deadzone near
   // center so a well-threaded rocket isn't jittered by the force.
   //
-  // v0.19.0 — damped controller rewrite. The v0.18.0 tune used a pure
-  // proportional pull (force = strength × distance_from_center), which
-  // is mathematically a spring and OSCILLATES: rocket reaches center with
-  // velocity, overshoots, gets pulled back, overshoots again. Players
-  // felt this as erratic up-and-down flying, not smooth float.
-  //
-  // The fix: add a velocity-damping term. Total force now is:
-  //   force = strength × distance_to_center  −  damping × rocket.vy
-  // The damping term opposes motion, so when the rocket is coasting
-  // through center it gets slowed down instead of sailing past. Net
-  // result: smooth ease toward target with no overshoot. This is the
-  // standard damped-spring / mass-spring-damper controller from
-  // animation and autopilot engineering.
-  //
-  // Numbers also softened: T3 peak strength 1.80→1.00, deadzones widened
-  // (so casual threading feels untouched), distance ramp linearized
-  // (no spike at gap walls).
+  // v0.20.0 — tuning pass. T3 with v0.19.0 damping still felt slightly
+  // erratic (residual oscillation) and a touch too strong. Pulled T3
+  // strength down (1.00 → 0.75), bumped damping across all tiers, and
+  // widened T3 deadzone. The "full autopilot" feel lives in the Master
+  // Shop's Full Autopilot upgrade instead, which requires this upgrade
+  // at T3 AND the Master-tier buy (+100% strength when both owned).
   //
   //   GUIDANCE_STRENGTH: pull coefficient per unit distance from center
   //   GUIDANCE_DAMPING:  velocity opposition — the smoothness knob
   //   GUIDANCE_RANGE:    how far AHEAD (in x) the system sees gaps
   //   GUIDANCE_DEADZONE: vertical distance (px) from center with zero pull
-  const GUIDANCE_STRENGTH = [0, 0.25, 0.55, 1.00];
-  const GUIDANCE_DAMPING  = [0, 0.06, 0.09, 0.13];
+  const GUIDANCE_STRENGTH = [0, 0.25, 0.50, 0.75];
+  const GUIDANCE_DAMPING  = [0, 0.08, 0.12, 0.16];
   const GUIDANCE_RANGE    = [0, 100,  140,  180];
-  const GUIDANCE_DEADZONE = [0, 30,   20,   12];
+  const GUIDANCE_DEADZONE = [0, 30,   20,   15];
+
+  // === Master Autopilot modifiers (v0.20.0 — NG+ capstone) ===
+  // Gates behind (a) Full Autopilot purchased in Master Shop AND
+  // (b) regular Guidance at T3 Precision. The T3 prerequisite means
+  // players still progress through the regular upgrade tree; Autopilot
+  // is a capstone on top, not a bypass. When both are owned, strength
+  // is boosted significantly while keeping damping modest — the rocket
+  // really does feel auto-piloted toward gap centers.
+  const AUTOPILOT_STRENGTH_MULT = 2.0;    // +100% pull strength
+  const AUTOPILOT_DAMPING_MULT  = 1.15;   // slight damping bump to handle the stronger pull without new oscillation
 
   // === Reactive Shields constants ===
   // Blast radius grows per tier. Measured in logical px (canvas BASE coords).
@@ -2266,7 +2265,7 @@
       label: 'Guidance System',
       desc: 'During Hyperfocus, pulls you toward the center of upcoming gaps',
       valueTable: 'guidanceTier',
-      format: v => ['Off', 'Basic', 'Advanced', 'Autopilot'][v] },
+      format: v => ['Off', 'Basic', 'Advanced', 'Precision'][v] },
     { id: 'hyperfocus_tempo', category: 'hyperfocus', line: 'hyperfocus', stat: 'tempo',
       label: 'Focus Tempo',
       desc: 'Picking up Hyperfocus during active extends duration (vs. refresh)',
@@ -2455,14 +2454,18 @@
   const MASTER_UPGRADE_DEFS = [
     { id: 'phoenix_cell',    label: 'Phoenix Cell',    cost: 1,
       desc: 'First fatal hit leaves you at 1 shield instead. Once per run.' },
-    { id: 'graviton_tether', label: 'Graviton Tether', cost: 3,
-      desc: 'Asteroids subtly deflect from your rocket.' },
+    // v0.20.0 — repurposed from the v0.12.0 Graviton Tether stub into
+    // Full Autopilot, a concrete capstone for the Guidance System line.
+    // Requires regular Guidance at T3 Precision to work — Master boost is
+    // a layer on top of the regular progression, not a bypass.
+    { id: 'full_autopilot',  label: 'Full Autopilot',  cost: 3,
+      desc: 'Requires Guidance Precision. +100% guidance strength — smooth auto-threading.' },
     { id: 'stellar_surplus', label: 'Stellar Surplus', cost: 10,
       desc: '+5% score multiplier every 10 asteroids passed (caps at +50% per run).' },
   ];
   const DEFAULT_MASTER_UPGRADES = {
     phoenix_cell: false,
-    graviton_tether: false,
+    full_autopilot: false,
     stellar_surplus: false,
   };
   let masterUpgrades = loadMasterUpgrades();
@@ -2471,6 +2474,14 @@
       const raw = localStorage.getItem('rocketRushMasterUpgrades');
       if (!raw) return { ...DEFAULT_MASTER_UPGRADES };
       const parsed = JSON.parse(raw);
+      // v0.20.0 — Graviton Tether renamed to Full Autopilot. Cheap
+      // migration (nobody has owned stars yet since MASTER_SHOP_AVAILABLE
+      // was false through v0.19.0), but clean to handle anyway.
+      if (typeof parsed.graviton_tether === 'boolean'
+          && typeof parsed.full_autopilot !== 'boolean') {
+        parsed.full_autopilot = parsed.graviton_tether;
+        delete parsed.graviton_tether;
+      }
       // Shape-preserving merge — unknown keys from saves are ignored,
       // missing keys use defaults. Same pattern as loadUpgrades().
       const result = { ...DEFAULT_MASTER_UPGRADES };
@@ -2564,6 +2575,17 @@
     // T0: no stacking (cap == base). T1: 2× cap. T2: 3× cap. T3: uncapped.
     if (tier >= 3) return Infinity;
     return base * (1 + tier);
+  }
+
+  // v0.20.0 — Is the Master Autopilot capstone active? Requires BOTH the
+  // Full Autopilot upgrade purchased in the Master Shop AND the regular
+  // Guidance line at T3 Precision. The T3 prerequisite means Autopilot
+  // layers on top of the full regular progression — it's a capstone, not
+  // a bypass. Returns boolean; used in the guidance physics block to
+  // apply AUTOPILOT_STRENGTH_MULT / AUTOPILOT_DAMPING_MULT.
+  function isAutopilotActive() {
+    return masterUpgrades.full_autopilot === true
+        && getGuidanceTier() >= MAX_UPGRADE_TIER;
   }
 
   let asteroids = [];
@@ -4249,6 +4271,11 @@
     if (tier === 0) return;
     const range = GUIDANCE_RANGE[tier];
     const peakAlpha = [0, 0.22, 0.38, 0.55][tier] * Accessibility.sweepScale();
+    // v0.20.0 — tint violet (Master tier palette) when Autopilot capstone
+    // is active. Gives a visible signal that the boosted state is on.
+    // Cyan (106,240,255) is regular; violet (200,121,255) is Autopilot.
+    const autopilot = isAutopilotActive();
+    const rgb = autopilot ? '200, 121, 255' : '106, 240, 255';
     for (const a of asteroids) {
       if (!a.top) continue;
       // Same gate as physics: pair must be ahead-ish of rocket and in range.
@@ -4269,10 +4296,10 @@
       const startX = Math.max(rocket.x - 10, a.x - 80);
       const endX = rightEdge + 20;
       const grad = ctx.createLinearGradient(startX, 0, endX, 0);
-      grad.addColorStop(0, 'rgba(106, 240, 255, 0)');
-      grad.addColorStop(0.35, `rgba(106, 240, 255, ${peakAlpha})`);
-      grad.addColorStop(0.85, `rgba(106, 240, 255, ${peakAlpha * 0.8})`);
-      grad.addColorStop(1, 'rgba(106, 240, 255, 0)');
+      grad.addColorStop(0, `rgba(${rgb}, 0)`);
+      grad.addColorStop(0.35, `rgba(${rgb}, ${peakAlpha})`);
+      grad.addColorStop(0.85, `rgba(${rgb}, ${peakAlpha * 0.8})`);
+      grad.addColorStop(1, `rgba(${rgb}, 0)`);
       ctx.fillStyle = grad;
       ctx.fillRect(startX, gapCenter - 1.5, endX - startX, 3);
       // Subtle broader band underneath for depth — same gradient at ~25%
@@ -4519,8 +4546,15 @@
     // can't launch the rocket offscreen.
     const guidanceTier = getGuidanceTier();
     if (focusTime > 0 && guidanceTier > 0) {
-      const gStrength = GUIDANCE_STRENGTH[guidanceTier];
-      const gDamping = GUIDANCE_DAMPING[guidanceTier];
+      // v0.20.0 — if Master Autopilot capstone is active (requires T3),
+      // boost strength by +100% and slightly tighten damping. The damping
+      // bump compensates for the stronger pull so it doesn't reintroduce
+      // the oscillation the v0.19.0 damping fix resolved.
+      const autopilot = isAutopilotActive();
+      const gStrength = GUIDANCE_STRENGTH[guidanceTier]
+                      * (autopilot ? AUTOPILOT_STRENGTH_MULT : 1);
+      const gDamping = GUIDANCE_DAMPING[guidanceTier]
+                     * (autopilot ? AUTOPILOT_DAMPING_MULT : 1);
       const gRange = GUIDANCE_RANGE[guidanceTier];
       const gDeadzone = GUIDANCE_DEADZONE[guidanceTier];
       // Find the nearest pair ahead of (or overlapping with) the rocket.
