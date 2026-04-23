@@ -1190,7 +1190,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.18.0</div>
+    <div class="version-badge" id="versionBadge">v0.19.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1271,7 +1271,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.18.0';
+  const GAME_VERSION = 'v0.19.0';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -2158,17 +2158,32 @@
   // determines pull strength (further = stronger), with a deadzone near
   // center so a well-threaded rocket isn't jittered by the force.
   //
-  //   GUIDANCE_STRENGTH: peak vy/frame at the far edge of the gap
-  //   GUIDANCE_RANGE:    how far AHEAD (in x) the system "sees" gaps —
-  //                      gives foreshadowing for upcoming pairs
-  //   GUIDANCE_DEADZONE: vertical distance (px) from center where force = 0
+  // v0.19.0 — damped controller rewrite. The v0.18.0 tune used a pure
+  // proportional pull (force = strength × distance_from_center), which
+  // is mathematically a spring and OSCILLATES: rocket reaches center with
+  // velocity, overshoots, gets pulled back, overshoots again. Players
+  // felt this as erratic up-and-down flying, not smooth float.
   //
-  // T3 peak 1.80 is ~3.5× gravity — a felt but not overwhelming pull;
-  // vy clamps still apply. T3 range 180px means the guidance engages
-  // ~a full gap-width before the asteroid reaches the rocket.
-  const GUIDANCE_STRENGTH = [0, 0.45, 0.90, 1.80];
+  // The fix: add a velocity-damping term. Total force now is:
+  //   force = strength × distance_to_center  −  damping × rocket.vy
+  // The damping term opposes motion, so when the rocket is coasting
+  // through center it gets slowed down instead of sailing past. Net
+  // result: smooth ease toward target with no overshoot. This is the
+  // standard damped-spring / mass-spring-damper controller from
+  // animation and autopilot engineering.
+  //
+  // Numbers also softened: T3 peak strength 1.80→1.00, deadzones widened
+  // (so casual threading feels untouched), distance ramp linearized
+  // (no spike at gap walls).
+  //
+  //   GUIDANCE_STRENGTH: pull coefficient per unit distance from center
+  //   GUIDANCE_DAMPING:  velocity opposition — the smoothness knob
+  //   GUIDANCE_RANGE:    how far AHEAD (in x) the system sees gaps
+  //   GUIDANCE_DEADZONE: vertical distance (px) from center with zero pull
+  const GUIDANCE_STRENGTH = [0, 0.25, 0.55, 1.00];
+  const GUIDANCE_DAMPING  = [0, 0.06, 0.09, 0.13];
   const GUIDANCE_RANGE    = [0, 100,  140,  180];
-  const GUIDANCE_DEADZONE = [0, 20,   15,   10];
+  const GUIDANCE_DEADZONE = [0, 30,   20,   12];
 
   // === Reactive Shields constants ===
   // Blast radius grows per tier. Measured in logical px (canvas BASE coords).
@@ -4479,27 +4494,33 @@
     // challenge of gravity (just the world is perceived slower)
     rocket.vy += gravity * dt;
 
-    // === Guidance System (v0.18.0 — Hyperfocus upgrade) ===
+    // === Guidance System (v0.18.0 — Hyperfocus upgrade; damping fix v0.19.0) ===
     // Rebuilt from v0.14.0-v0.17.0 "Deflection Field" (face repulsion).
-    // New model: while Hyperfocus is active AND Guidance System is
-    // purchased, each upcoming asteroid pair pulls rocket.vy toward its
-    // gap's vertical midpoint. Force scales with distance from center
-    // (further → stronger pull) with a central deadzone so a well-threaded
-    // rocket isn't jittered.
+    // While Hyperfocus is active AND Guidance System is purchased, each
+    // upcoming asteroid pair pulls rocket.vy toward its gap's vertical
+    // midpoint. Damped-spring controller: proportional pull toward center
+    // minus damping term proportional to current vy. Damping prevents the
+    // rocket from overshooting center and oscillating around it — the
+    // visible "erratic flying" behavior v0.18.0 exhibited.
     //
-    // x-range in this model is FORWARD-LOOKING: how far in front of the
-    // rocket the system "sees" gaps. This gives foreshadowing — the pull
-    // engages before the pair arrives, so the rocket is already lined up.
+    // x-range is FORWARD-LOOKING: how far in front of the rocket the
+    // system "sees" gaps. Only the nearest pair is considered per frame
+    // (prevents tug-of-war across multiple spawns).
     //
-    // Only one pair is considered per frame: the nearest one whose right
-    // edge is still ahead of the rocket. Looking at all pairs in range
-    // would create tug-of-war as the rocket passes between spawns.
+    // Force breakdown (per frame, scaled by dt):
+    //   pull_term     = strength × (gapCenter - rocket.y) / gapHalf
+    //                   Linear with distance from center, normalized so
+    //                   edge-of-gap is 1.0 (clamped). No spike at walls.
+    //   damping_term  = damping × rocket.vy
+    //                   Opposes motion, smooths out overshoot.
+    //   force         = pull_term - damping_term
     //
-    // Applied BEFORE the vy clamps below, so guidance forces stay bounded
-    // by maxUp/maxDown — can't launch the rocket offscreen.
+    // Applied BEFORE vy clamps, so still bounded by maxUp/maxDown —
+    // can't launch the rocket offscreen.
     const guidanceTier = getGuidanceTier();
     if (focusTime > 0 && guidanceTier > 0) {
       const gStrength = GUIDANCE_STRENGTH[guidanceTier];
+      const gDamping = GUIDANCE_DAMPING[guidanceTier];
       const gRange = GUIDANCE_RANGE[guidanceTier];
       const gDeadzone = GUIDANCE_DEADZONE[guidanceTier];
       // Find the nearest pair ahead of (or overlapping with) the rocket.
@@ -4533,15 +4554,18 @@
           const gapTop = bestPair.h;        // bottom edge of top asteroid
           const gapBot = partner.y;         // top edge of bottom asteroid
           const gapCenter = (gapTop + gapBot) / 2;
+          const gapHalf = (gapBot - gapTop) / 2;
           const dy = gapCenter - rocket.y;  // positive → center is below us
           const absDy = Math.abs(dy);
           if (absDy > gDeadzone) {
-            // Force magnitude ramps from 0 at deadzone edge to full strength
-            // at gapSize/2 (just inside the wall). Capped at 1.0 scalar.
-            const gapHalf = (gapBot - gapTop) / 2;
-            const ramp = Math.min(1, (absDy - gDeadzone) / Math.max(1, gapHalf - gDeadzone));
-            const force = gStrength * ramp * Math.sign(dy);
-            rocket.vy += force * dt;
+            // Pull term: linear with distance, normalized so edge-of-gap = 1.0
+            // (clamped, so if rocket is somehow beyond gap edge it still caps).
+            const normalizedDy = Math.max(-1, Math.min(1, dy / Math.max(1, gapHalf)));
+            const pull = gStrength * normalizedDy;
+            // Damping term: opposes current velocity so rocket doesn't
+            // overshoot gap center. This is what makes the float smooth.
+            const damp = gDamping * rocket.vy;
+            rocket.vy += (pull - damp) * dt;
           }
         }
       }
