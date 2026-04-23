@@ -1055,6 +1055,68 @@
     letter-spacing: 1px;
     font-style: italic;
   }
+
+  /* === v0.15.0 — Accessibility: Reduced Motion CSS overrides === */
+  /* JS applies `body.reduced-motion` when the setting is enabled (respects
+     the OS prefers-reduced-motion preference on first visit). These rules
+     handle the CSS-animation side; JS handles the canvas-rendered side
+     (shake, particles, flashes, sweep). Philosophy: preserve every UX
+     signal (urgency, celebration, affordance) but dampen the motion that
+     delivers it. The user still gets all the info, just calmer. */
+
+  /* Expiring-powerup badge — the default is a sharp 3-flash strobe every
+     500ms. Too intense for motion-sensitive users. Swap to a slow, gentle
+     opacity pulse — same "your buff is about to expire" signal, no strobe. */
+  body.reduced-motion .pu-badge.expiring {
+    animation: pu-expiring-gentle 1.4s ease-in-out infinite;
+  }
+  @keyframes pu-expiring-gentle {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.55; }
+  }
+
+  /* Master unlock toast — default has a satisfying scale-bounce from 0.85
+     to 1.0 via cubic-bezier overshoot. Scale-bounce is classic trigger for
+     vestibular discomfort; swap to straight fade-in. The text and glow
+     still deliver the celebration, just without the motion. */
+  body.reduced-motion .unlock-toast {
+    transition: opacity 0.3s ease !important;
+    transform: translate(-50%, -50%) !important;
+  }
+  body.reduced-motion .unlock-toast.show {
+    transform: translate(-50%, -50%) !important;
+  }
+
+  /* "NEW BEST!" badge on game-over — same scale-bounce pattern as the
+     unlock toast. Flatten the motion, keep the visual state change. */
+  body.reduced-motion .stat-new-best {
+    transition: opacity 0.3s ease !important;
+    transform: translateX(-50%) !important;
+  }
+  body.reduced-motion .stat-new-best.show {
+    transform: translateX(-50%) !important;
+  }
+
+  /* Shop category tile "affordable" dot pulses in size+opacity at 1.4s.
+     Static dot (still visible, still cyan) conveys the same "affordable
+     now" meaning without the continuous motion. */
+  body.reduced-motion .category-tile-afford-dot {
+    animation: none;
+    opacity: 1;
+  }
+
+  /* === v0.15.0 — minor contrast bumps for marginal dim-text === */
+  /* Scoreboard tile label was dimmest legitimate reading target on the
+     menu (0.55 alpha against partially transparent bg). Bump to 0.75 —
+     still reads as secondary but noticeably more readable. */
+  .scoreboard-label {
+    color: rgba(201, 208, 242, 0.75);
+  }
+  /* The scoreboard tease subtitle was similar. Small bump keeps it
+     clearly subordinate but not straining to read. */
+  .scoreboard-tease {
+    color: rgba(154, 163, 214, 0.75);
+  }
 </style>
 </head>
 <body>
@@ -1092,7 +1154,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.14.0</div>
+    <div class="version-badge" id="versionBadge">v0.15.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1153,6 +1215,13 @@
         <span>SOUND EFFECTS</span>
         <div class="toggle on" id="sfxToggle" role="switch" aria-checked="true"></div>
       </div>
+      <!-- v0.15.0 — Accessibility: reduce shake/flash/particle intensity
+           for motion-sensitive players. Default respects the OS's
+           prefers-reduced-motion setting on first visit. -->
+      <div class="settings-row">
+        <span>REDUCE MOTION</span>
+        <div class="toggle" id="motionToggle" role="switch" aria-checked="false"></div>
+      </div>
     </div>
     <button class="btn btn-secondary" id="settingsCloseBtn" style="margin-top: 20px">CLOSE</button>
   </div>
@@ -1166,7 +1235,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.14.0';
+  const GAME_VERSION = 'v0.15.0';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -1626,6 +1695,81 @@
     };
   })();
 
+  // ======================================================================
+  // ACCESSIBILITY (v0.15.0)
+  // ======================================================================
+  // Separate module from Audio so the concerns stay tidy, but same shape:
+  // settings object + localStorage persistence + scalar getters the rest
+  // of the game reads without caring about the plumbing.
+  //
+  // First-run default: respects the OS's prefers-reduced-motion setting if
+  // it's set to "reduce" — so motion-sensitive users don't have to know
+  // our setting exists. Can be overridden either direction after.
+  //
+  // "Reduced motion" scaling (when enabled):
+  //   - shake        × 0.35  (still some feedback, not eliminated)
+  //   - flash        × 0.35  (white flashes on launch/death/shield-pop)
+  //   - particles    × 0.50  (fewer simultaneous particles)
+  //   - sweep        × 0.40  (Hyperfocus activation scan-line alpha)
+  //
+  // CSS reduced-motion overrides live inside `body.reduced-motion {...}`
+  // rules (see stylesheet) — disables the expiring-badge strobe, the
+  // Master unlock toast's scale bounce, and the affordance-dot pulse.
+  const Accessibility = (() => {
+    const KEY = 'rocketRushAccessibility';
+    const settings = load();
+
+    function load() {
+      try {
+        const raw = localStorage.getItem(KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          return { reducedMotion: !!parsed.reducedMotion };
+        }
+      } catch (_) {}
+      // First-run: honor the OS-level preference. Users with the system
+      // setting enabled get our reduced motion by default, without having
+      // to discover our toggle.
+      const osPrefers =
+        typeof window !== 'undefined' &&
+        window.matchMedia &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      return { reducedMotion: !!osPrefers };
+    }
+
+    function save() {
+      try { localStorage.setItem(KEY, JSON.stringify(settings)); } catch (_) {}
+    }
+
+    function isReducedMotion() { return settings.reducedMotion; }
+    function setReducedMotion(on) {
+      settings.reducedMotion = !!on;
+      save();
+      applyBodyClass();
+    }
+
+    // Toggle the body class so CSS rules targeting .reduced-motion can
+    // adapt (disable keyframe animations, dampen transitions, etc.).
+    // Called on page load and whenever the setting flips.
+    function applyBodyClass() {
+      if (typeof document === 'undefined' || !document.body) return;
+      document.body.classList.toggle('reduced-motion', settings.reducedMotion);
+    }
+
+    // Scalar helpers. Each call site multiplies its effect by one of these
+    // so the reduced-motion bypass stays in one place. Values are in the
+    // module header comment above if you want to retune.
+    function shakeScale()    { return settings.reducedMotion ? 0.35 : 1.0; }
+    function flashScale()    { return settings.reducedMotion ? 0.35 : 1.0; }
+    function particleScale() { return settings.reducedMotion ? 0.50 : 1.0; }
+    function sweepScale()    { return settings.reducedMotion ? 0.40 : 1.0; }
+
+    return {
+      isReducedMotion, setReducedMotion, applyBodyClass,
+      shakeScale, flashScale, particleScale, sweepScale,
+    };
+  })();
+
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
   const hud = document.getElementById('hud');
@@ -1652,6 +1796,7 @@
   const settingsCloseBtn = document.getElementById('settingsCloseBtn');
   const musicToggle = document.getElementById('musicToggle');
   const sfxToggle = document.getElementById('sfxToggle');
+  const motionToggle = document.getElementById('motionToggle');
   const muteToggle = document.getElementById('muteToggle');
   // Shop & wallet refs
   const walletBadge = document.getElementById('walletBadge');
@@ -2535,7 +2680,10 @@
   }
 
   function addParticles(x, y, opts = {}) {
-    const n = opts.n ?? 6;
+    // v0.15.0 — reduced motion halves particle spawn count. Also a
+    // framerate win on lower-end devices. Ceiling so n=1 callers still
+    // emit at least 1 particle (otherwise small bursts visually disappear).
+    const n = Math.max(1, Math.ceil((opts.n ?? 6) * Accessibility.particleScale()));
     const color = opts.color ?? '#ff9a3c';
     const speed = opts.speed ?? 2;
     const life = opts.life ?? 30;
@@ -2588,7 +2736,10 @@
     const cy = a.y + a.h / 2;
     // Mix of palette colors — randomize per particle for a speckled look
     const palette = ['#7a6a8c', '#4a3a5c', '#3a2a4c', '#9a8aac'];
-    for (let i = 0; i < 6; i++) {
+    // v0.15.0 — scale with reduced-motion particle factor (min 1 so the
+    // shatter still visually registers even if scale would round to 0).
+    const count = Math.max(1, Math.ceil(6 * Accessibility.particleScale()));
+    for (let i = 0; i < count; i++) {
       if (particles.length >= PARTICLE_CAP) break;
       const ang = Math.random() * Math.PI * 2;
       const sp = 2 + Math.random() * 2.2;
@@ -2883,14 +3034,19 @@
   });
 
   // ===== Settings UI =====
-  // Reflects the saved audio settings into the toggle UI, then wires
-  // click handlers that update both the visual state and the Audio engine.
+  // Reflects the saved audio + accessibility settings into the toggle UI,
+  // then wires click handlers that update both the visual state and the
+  // underlying settings modules.
   function refreshSettingsUI() {
     const s = Audio.getSettings();
     musicToggle.classList.toggle('on', s.musicOn);
     musicToggle.setAttribute('aria-checked', String(s.musicOn));
     sfxToggle.classList.toggle('on', s.sfxOn);
     sfxToggle.setAttribute('aria-checked', String(s.sfxOn));
+    // v0.15.0 — motion toggle sync
+    const reduced = Accessibility.isReducedMotion();
+    motionToggle.classList.toggle('on', reduced);
+    motionToggle.setAttribute('aria-checked', String(reduced));
     refreshMuteIcon();
   }
 
@@ -2935,6 +3091,20 @@
     // Play the click AFTER toggling so the user hears it when enabling,
     // and doesn't hear it (correctly) when disabling
     if (newVal) Audio.play.uiClick();
+    refreshSettingsUI();
+  });
+
+  // v0.15.0 — Reduce Motion toggle. Flips the accessibility setting and
+  // updates the body class so CSS-driven reductions (strobe animations,
+  // toast bounce, etc.) take effect immediately. Click sound plays on
+  // enable but not on disable, matching the SFX toggle pattern.
+  motionToggle.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    ensureAudio();
+    const newVal = !Accessibility.isReducedMotion();
+    Accessibility.setReducedMotion(newVal);
+    Audio.play.uiClick();
     refreshSettingsUI();
   });
 
@@ -3398,7 +3568,7 @@
     // Feels punchy without making the player wait.
     shake = 8;
     flashEl.style.transition = 'none';
-    flashEl.style.opacity = '0.35';
+    flashEl.style.opacity = String(0.35 * Accessibility.flashScale());
     // Next frame: fade it out smoothly
     requestAnimationFrame(() => {
       flashEl.style.transition = 'opacity 0.25s ease-out';
@@ -3472,7 +3642,7 @@
     // visible, input is flowing normally again.
     inputLockUntil = performance.now() + 500;
     shake = 18;
-    flashEl.style.opacity = '0.6';
+    flashEl.style.opacity = String(0.6 * Accessibility.flashScale());
     setTimeout(() => {
       flashEl.style.opacity = '0';
       flashEl.style.transition = 'opacity 0.4s';
@@ -4309,7 +4479,7 @@
               n: 26, color: '#6af0ff', speed: 3.5, life: 32, size: 2.5,
             });
             flashEl.style.transition = 'none';
-            flashEl.style.opacity = '0.25';
+            flashEl.style.opacity = String(0.25 * Accessibility.flashScale());
             requestAnimationFrame(() => {
               flashEl.style.transition = 'opacity 0.2s ease-out';
               flashEl.style.opacity = '0';
@@ -4528,8 +4698,11 @@
 
     let sx = 0, sy = 0;
     if (shake > 0) {
-      sx = (Math.random() - 0.5) * shake;
-      sy = (Math.random() - 0.5) * shake;
+      // v0.15.0 — reduced motion dampens shake intensity (not eliminated —
+      // a little feedback still reads as impact).
+      const shakeAmp = shake * Accessibility.shakeScale();
+      sx = (Math.random() - 0.5) * shakeAmp;
+      sy = (Math.random() - 0.5) * shakeAmp;
       ctx.translate(sx, sy);
     }
 
@@ -4617,7 +4790,8 @@
       const sweepProgress = (focusTimeMax - focusTime) / 500;
       if (sweepProgress >= 0 && sweepProgress <= 1) {
         const sweepY = sweepProgress * BASE_H;
-        const sweepAlpha = 0.35 * (1 - sweepProgress); // fades as it descends
+        // v0.15.0 — reduced motion dampens alpha via sweepScale.
+        const sweepAlpha = 0.35 * (1 - sweepProgress) * Accessibility.sweepScale();
         ctx.fillStyle = `rgba(180, 250, 255, ${sweepAlpha})`;
         ctx.fillRect(0, sweepY - 1, BASE_W, 2);
         // Soft glow above the line
@@ -4680,6 +4854,10 @@
   refreshWalletUI();  // show current banked coins on main menu
   refreshScoreboardUI();  // Phase 2: show lifetime coins + NG+ progress bar
   renderDifficultySelector();  // build the 4 tiles (Master locked unless unlocked)
+  // v0.15.0 — sync the reduced-motion body class from persisted/default
+  // accessibility settings so CSS overrides (strobe disable, toast
+  // bounce disable, etc.) are active from first paint.
+  Accessibility.applyBodyClass();
   // Hint text is baked into the HTML as mobile-first copy ("Tap to boost")
   // since this is primarily a mobile game. PC testing uses the same string —
   // clicking the canvas still behaves like a "tap" for the pointer input.
