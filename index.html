@@ -1190,7 +1190,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.16.0</div>
+    <div class="version-badge" id="versionBadge">v0.17.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1271,7 +1271,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.16.0';
+  const GAME_VERSION = 'v0.17.0';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -1933,7 +1933,7 @@
       coinBronzeValue: 6, coinGoldValue: 21,
       pairsPerPoint: 3, pointsPerPair: 1,
       powerupEveryPairs: 3,   // generous — rewards newer players
-      hyperfocusScale: 0.50,  // world at 50% speed — strong assist on easy mode
+      hyperfocusScale: 0.70,  // v0.17.0 — light assist; wide gaps don't need much slowdown
     },
     intermediate: {
       id: 'intermediate', name: 'Intermediate',
@@ -1953,7 +1953,7 @@
       coinBronzeValue: 30, coinGoldValue: 105,
       pairsPerPoint: 3, pointsPerPair: 5,
       powerupEveryPairs: 9,  // rarer — fewer safety nets
-      hyperfocusScale: 0.65,  // gentle assist — helps you READ the pattern
+      hyperfocusScale: 0.45,  // v0.17.0 — strong slowdown to give time on tight gaps
     },
     // Master is shown as a locked tile until unlocked. The `tagline` is
     // shown post-unlock (replacing the "???" mystery). The `unlockHint`
@@ -1968,7 +1968,7 @@
       coinBronzeValue: 60, coinGoldValue: 210,
       pairsPerPoint: 3, pointsPerPair: 10,
       powerupEveryPairs: 13,  // sparse — survive on skill
-      hyperfocusScale: 0.75,  // minimal assist — brief breath of focus
+      hyperfocusScale: 0.35,  // v0.17.0 — dramatic slowdown; brutal gaps demand it
     },
   };
 
@@ -2149,11 +2149,15 @@
   // During Hyperfocus, if the Deflection Field upgrade is purchased,
   // asteroid faces push the rocket's vy away from collision. Strength is
   // applied per-frame with dt scaling, softened by proximity falloff
-  // (1 - dist/range). Values are conservative starting points — tune post-
-  // playtest. At T3, peak force near the face is 0.60 vy/frame — meaningful
-  // but still dominated by player-controlled thrust and gravity.
-  const DEFLECTION_STRENGTH = [0, 0.15, 0.35, 0.60];
-  const DEFLECTION_RANGE    = [0, 18,   28,   40];
+  // (1 - dist/range).
+  //
+  // v0.17.0 — doubled strength, +25% range. Previous values (0.60 peak at
+  // T3) were barely above gravity (0.52) and the exposure window was too
+  // brief to accumulate a felt nudge. New T3 peak at 1.40 is ~2.7× gravity,
+  // so over even a few close-contact frames the rocket gets meaningfully
+  // separated from the face. vy clamps still apply — can't launch offscreen.
+  const DEFLECTION_STRENGTH = [0, 0.30, 0.70, 1.40];
+  const DEFLECTION_RANGE    = [0, 22,   34,   50];
 
   // === Reactive Shields constants ===
   // Blast radius grows per tier. Measured in logical px (canvas BASE coords).
