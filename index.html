@@ -1190,7 +1190,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.17.0</div>
+    <div class="version-badge" id="versionBadge">v0.18.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1271,7 +1271,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.17.0';
+  const GAME_VERSION = 'v0.18.0';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -2118,11 +2118,13 @@
     propulsionTier: [0, 1, 2, 3],
     integrityTier:  [0, 1, 2, 3],
     // === Hyperfocus upgrades (v0.14.0) ===
-    // Focus Duration is value-based (ms); Deflection Field and Focus
+    // Focus Duration is value-based (ms); Guidance System and Focus
     // Tempo are stage-based. Duration upgrade replaces the old FOCUS_DUR
     // constant — getFocusDuration() reads from this table.
     focusDurationMs: [FOCUS_DUR_BASE, 5500, 7000, 9000],
-    deflectionTier:  [0, 1, 2, 3],
+    // v0.18.0 — renamed from deflectionTier (was face-repulsion, now
+    // gap-centering; see GUIDANCE_STRENGTH/RANGE/DEADZONE constants).
+    guidanceTier:   [0, 1, 2, 3],
     focusTempoTier:  [0, 1, 2, 3],
   };
 
@@ -2145,19 +2147,28 @@
   const INTEGRITY_GRAVITY_MULT = [1.00, 0.90, 0.80, 0.72];
   const INTEGRITY_MAX_VY_MULT  = [1.00, 0.95, 0.90, 0.85];
 
-  // === Deflection Field constants (v0.14.0 — Hyperfocus category) ===
-  // During Hyperfocus, if the Deflection Field upgrade is purchased,
-  // asteroid faces push the rocket's vy away from collision. Strength is
-  // applied per-frame with dt scaling, softened by proximity falloff
-  // (1 - dist/range).
+  // === Guidance System constants (v0.18.0 — Hyperfocus category) ===
+  // Previously "Deflection Field" (v0.14.0-v0.17.0): repelled rocket away
+  // from nearest asteroid face. That was reactive, not guiding — and
+  // playtest feel confirmed players expected it to actively help thread
+  // gaps, not just shove them back from a near-miss.
   //
-  // v0.17.0 — doubled strength, +25% range. Previous values (0.60 peak at
-  // T3) were barely above gravity (0.52) and the exposure window was too
-  // brief to accumulate a felt nudge. New T3 peak at 1.40 is ~2.7× gravity,
-  // so over even a few close-contact frames the rocket gets meaningfully
-  // separated from the face. vy clamps still apply — can't launch offscreen.
-  const DEFLECTION_STRENGTH = [0, 0.30, 0.70, 1.40];
-  const DEFLECTION_RANGE    = [0, 22,   34,   50];
+  // New model: each asteroid pair within x-reach exerts a pull on the
+  // rocket's vy toward the gap's vertical midpoint. Distance from center
+  // determines pull strength (further = stronger), with a deadzone near
+  // center so a well-threaded rocket isn't jittered by the force.
+  //
+  //   GUIDANCE_STRENGTH: peak vy/frame at the far edge of the gap
+  //   GUIDANCE_RANGE:    how far AHEAD (in x) the system "sees" gaps —
+  //                      gives foreshadowing for upcoming pairs
+  //   GUIDANCE_DEADZONE: vertical distance (px) from center where force = 0
+  //
+  // T3 peak 1.80 is ~3.5× gravity — a felt but not overwhelming pull;
+  // vy clamps still apply. T3 range 180px means the guidance engages
+  // ~a full gap-width before the asteroid reaches the rocket.
+  const GUIDANCE_STRENGTH = [0, 0.45, 0.90, 1.80];
+  const GUIDANCE_RANGE    = [0, 100,  140,  180];
+  const GUIDANCE_DEADZONE = [0, 20,   15,   10];
 
   // === Reactive Shields constants ===
   // Blast radius grows per tier. Measured in logical px (canvas BASE coords).
@@ -2226,21 +2237,21 @@
       desc: 'Reduced gravity and softer terminal velocity',
       valueTable: 'integrityTier',
       format: v => ['Stock', 'Reinforced Frame', 'Adaptive Dampeners', 'Inertial Stabilizer'][v] },
-    // === Hyperfocus (v0.14.0) — duration, deflection field, stacking ===
-    // Focus Duration is value-based (extends the 4s base). Deflection is
-    // stage-based (repulsion field during active). Focus Tempo is stage-
-    // based (changes pickup-while-active behavior: refresh → stack with cap
-    // → stack uncapped).
+    // === Hyperfocus (v0.14.0; guidance rebuilt v0.18.0) — duration, guidance, stacking ===
+    // Focus Duration is value-based (extends the 4s base). Guidance System is
+    // stage-based (gap-centering pull during active; was "Deflection Field"
+    // in v0.14.0-v0.17.0). Focus Tempo is stage-based (changes pickup-
+    // while-active behavior: refresh → stack with cap → stack uncapped).
     { id: 'hyperfocus_duration', category: 'hyperfocus', line: 'hyperfocus', stat: 'duration',
       label: 'Focus Duration',
       desc: 'Hyperfocus lasts longer when activated',
       valueTable: 'focusDurationMs',
       format: v => (v / 1000).toFixed(1) + 's' },
-    { id: 'hyperfocus_deflection', category: 'hyperfocus', line: 'hyperfocus', stat: 'deflection',
-      label: 'Deflection Field',
-      desc: 'During Hyperfocus, asteroid faces push you gently away',
-      valueTable: 'deflectionTier',
-      format: v => ['Off', 'Gentle', 'Strong', 'Forcefield'][v] },
+    { id: 'hyperfocus_guidance', category: 'hyperfocus', line: 'hyperfocus', stat: 'guidance',
+      label: 'Guidance System',
+      desc: 'During Hyperfocus, pulls you toward the center of upcoming gaps',
+      valueTable: 'guidanceTier',
+      format: v => ['Off', 'Basic', 'Advanced', 'Autopilot'][v] },
     { id: 'hyperfocus_tempo', category: 'hyperfocus', line: 'hyperfocus', stat: 'tempo',
       label: 'Focus Tempo',
       desc: 'Picking up Hyperfocus during active extends duration (vs. refresh)',
@@ -2263,7 +2274,7 @@
     // in-game Hyperfocus visual identity (edge vignette, object halos).
     // Icon matches the 🎯 pickup badge glyph from POWERUP_DEFS.slowmo.
     { id: 'hyperfocus', name: 'Hyperfocus', icon: '🎯', color: '#6af0ff',
-      tagline: 'Duration, deflection, stacking' },
+      tagline: 'Duration, guidance, stacking' },
   ];
 
   // === Persistent currency ===
@@ -2283,10 +2294,10 @@
     // scale the rocket's physics constants via getters. Same save-shape
     // pattern as shield.reactive (integer tier, 0-3).
     hangar: { propulsion: 0, integrity: 0 },
-    // v0.14.0 — Hyperfocus category. Duration extends active time, deflection
-    // adds a repulsion field around asteroid faces while active, tempo
-    // controls how picking up Hyperfocus during an active buff behaves.
-    hyperfocus: { duration: 0, deflection: 0, tempo: 0 },
+    // v0.14.0 — Hyperfocus category. Duration extends active time, guidance
+    // (v0.18.0, was "deflection") pulls rocket toward upcoming gap centers,
+    // tempo controls how picking up Hyperfocus during an active buff behaves.
+    hyperfocus: { duration: 0, guidance: 0, tempo: 0 },
   };
   let upgrades = loadUpgrades();
 
@@ -2295,6 +2306,16 @@
       const raw = localStorage.getItem('rocketRushUpgrades');
       if (!raw) return JSON.parse(JSON.stringify(DEFAULT_UPGRADES));
       const parsed = JSON.parse(raw);
+      // v0.18.0 — Deflection Field was renamed to Guidance System and the
+      // mechanic was rebuilt (repulsion → centering). The tier investment
+      // transfers directly: a player who bought T2 Deflection now owns T2
+      // Guidance. Run the rename BEFORE the shape-preserving merge below
+      // so the parsed data has the new key by the time we iterate.
+      if (parsed.hyperfocus && typeof parsed.hyperfocus.deflection === 'number'
+          && typeof parsed.hyperfocus.guidance !== 'number') {
+        parsed.hyperfocus.guidance = parsed.hyperfocus.deflection;
+        delete parsed.hyperfocus.deflection;
+      }
       // Merge with defaults so missing fields get baseline values
       const result = JSON.parse(JSON.stringify(DEFAULT_UPGRADES));
       for (const line in result) {
@@ -2515,12 +2536,12 @@
 
   // === Hyperfocus getters (v0.14.0) ===
   // getFocusDuration returns the T-tier ms value from TIER_VALUES.
-  // getDeflectionTier / getFocusTempoTier return the raw 0-3 integer so
+  // getGuidanceTier / getFocusTempoTier return the raw 0-3 integer so
   // callers can switch on it (stage-based upgrades). getFocusTempoCap
   // computes the max stacked duration based on tempo tier — used in the
   // pickup handler to clamp stacked focus time.
   function getFocusDuration()   { return TIER_VALUES.focusDurationMs[upgrades.hyperfocus.duration]; }
-  function getDeflectionTier()  { return upgrades.hyperfocus.deflection; }
+  function getGuidanceTier()    { return upgrades.hyperfocus.guidance; }
   function getFocusTempoTier()  { return upgrades.hyperfocus.tempo; }
   function getFocusTempoCap() {
     const tier = getFocusTempoTier();
@@ -4194,44 +4215,57 @@
     ctx.restore();
   }
 
-  // === v0.16.0 — Deflection Field shimmer ===
-  // Visualizes the Deflection Field upgrade's force zone during Hyperfocus.
-  // Draws a cyan gradient on each asteroid's exposed face (bottom of top
-  // asteroids, top of bottom asteroids) — but ONLY on asteroids within the
-  // rocket's horizontal reach, matching the physics gate in update(). The
-  // gradient extends from the face into the gap by DEFLECTION_RANGE pixels,
-  // fading from peak alpha at the face to transparent at the range edge.
+  // === v0.18.0 — Guidance System shimmer (rewritten from v0.16.0 Deflection) ===
+  // Visualizes the Guidance System's target line during Hyperfocus. For each
+  // asteroid pair ahead of the rocket within GUIDANCE_RANGE, draws a thin
+  // cyan horizontal line at the gap's vertical midpoint — the point the
+  // force is pulling toward. Line extends from near the rocket to just past
+  // the pair's right edge so the player sees WHERE the upcoming gap centers.
   //
-  // Peak alpha scales with tier (T1 subtle, T2 noticeable, T3 prominent)
-  // and is dampened by Accessibility.sweepScale() under reduced motion to
-  // keep the treatment consistent with other Hyperfocus visuals.
+  // Peak alpha scales with tier (T1 subtle, T2 clearer, T3 prominent) and is
+  // dampened by Accessibility.sweepScale() under reduced motion to stay
+  // consistent with other Hyperfocus visuals.
   //
-  // No animation — the force field is steady-state, so a pulsing visual
-  // would misrepresent the mechanic. Static gradient reads as "shielding."
-  function drawDeflectionField() {
+  // No animation — the target line is steady-state guidance, a pulse would
+  // misrepresent the mechanic. Thin line + soft glow reads as "target here."
+  function drawGuidanceField() {
     if (focusTime <= 0) return;
-    const tier = getDeflectionTier();
+    const tier = getGuidanceTier();
     if (tier === 0) return;
-    const range = DEFLECTION_RANGE[tier];
-    const peakAlpha = [0, 0.16, 0.26, 0.40][tier] * Accessibility.sweepScale();
+    const range = GUIDANCE_RANGE[tier];
+    const peakAlpha = [0, 0.22, 0.38, 0.55][tier] * Accessibility.sweepScale();
     for (const a of asteroids) {
-      // Match the update() gate: only asteroids we're flying into
-      if (rocket.x < a.x - 4 || rocket.x > a.x + a.w + 4) continue;
-      if (a.top) {
-        // Face at bottom of top asteroid — gradient fades down into gap
-        const grad = ctx.createLinearGradient(0, a.h, 0, a.h + range);
-        grad.addColorStop(0, `rgba(106, 240, 255, ${peakAlpha})`);
-        grad.addColorStop(1, 'rgba(106, 240, 255, 0)');
-        ctx.fillStyle = grad;
-        ctx.fillRect(a.x, a.h, a.w, range);
-      } else {
-        // Face at top of bottom asteroid — gradient fades up into gap
-        const grad = ctx.createLinearGradient(0, a.y, 0, a.y - range);
-        grad.addColorStop(0, `rgba(106, 240, 255, ${peakAlpha})`);
-        grad.addColorStop(1, 'rgba(106, 240, 255, 0)');
-        ctx.fillStyle = grad;
-        ctx.fillRect(a.x, a.y - range, a.w, range);
+      if (!a.top) continue;
+      // Same gate as physics: pair must be ahead-ish of rocket and in range.
+      const rightEdge = a.x + a.w;
+      if (rightEdge < rocket.x - 20) continue;
+      const dx = (a.x + a.w / 2) - rocket.x;
+      if (dx > range) continue;
+      // Find partner to compute gap center
+      let partner = null;
+      for (const b of asteroids) {
+        if (!b.top && b.x === a.x) { partner = b; break; }
       }
+      if (!partner) continue;
+      const gapCenter = (a.h + partner.y) / 2;
+      // Line fades at its near end (toward rocket) and far end (past pair)
+      // so the guidance "focuses in" on the gap rather than slashing the
+      // whole screen. Draw as a short gradient bar 3px tall.
+      const startX = Math.max(rocket.x - 10, a.x - 80);
+      const endX = rightEdge + 20;
+      const grad = ctx.createLinearGradient(startX, 0, endX, 0);
+      grad.addColorStop(0, 'rgba(106, 240, 255, 0)');
+      grad.addColorStop(0.35, `rgba(106, 240, 255, ${peakAlpha})`);
+      grad.addColorStop(0.85, `rgba(106, 240, 255, ${peakAlpha * 0.8})`);
+      grad.addColorStop(1, 'rgba(106, 240, 255, 0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(startX, gapCenter - 1.5, endX - startX, 3);
+      // Subtle broader band underneath for depth — same gradient at ~25%
+      // height and ~40% opacity. Keeps it readable without being busy.
+      ctx.fillStyle = grad;
+      ctx.globalAlpha = 0.4;
+      ctx.fillRect(startX, gapCenter - 5, endX - startX, 10);
+      ctx.globalAlpha = 1.0;
     }
   }
 
@@ -4445,43 +4479,69 @@
     // challenge of gravity (just the world is perceived slower)
     rocket.vy += gravity * dt;
 
-    // === Deflection Field (v0.14.0 — Hyperfocus upgrade) ===
-    // While Hyperfocus is active AND the Deflection Field upgrade is
-    // purchased, asteroid exposed faces apply a gentle vy nudge on the
-    // rocket, pushing it away from imminent collisions. Scales by proximity
-    // (1 - dist/range), so the force peaks at the face and vanishes at
-    // range edge. Only considers asteroids whose x-range overlaps the
-    // rocket (nothing else can realistically threaten a collision).
+    // === Guidance System (v0.18.0 — Hyperfocus upgrade) ===
+    // Rebuilt from v0.14.0-v0.17.0 "Deflection Field" (face repulsion).
+    // New model: while Hyperfocus is active AND Guidance System is
+    // purchased, each upcoming asteroid pair pulls rocket.vy toward its
+    // gap's vertical midpoint. Force scales with distance from center
+    // (further → stronger pull) with a central deadzone so a well-threaded
+    // rocket isn't jittered.
     //
-    // Applied BEFORE the vy clamps below, so deflection forces also get
-    // bounded by maxUp/maxDown — can't launch the rocket offscreen.
+    // x-range in this model is FORWARD-LOOKING: how far in front of the
+    // rocket the system "sees" gaps. This gives foreshadowing — the pull
+    // engages before the pair arrives, so the rocket is already lined up.
     //
-    // NOTE: if the rocket is exactly centered between top and bottom
-    // asteroids in a tight gap, both forces roughly cancel out. That's
-    // fine — the effect is meant to correct near-miss trajectories, not
-    // to replace player input.
-    const deflectTier = getDeflectionTier();
-    if (focusTime > 0 && deflectTier > 0) {
-      const deflectStrength = DEFLECTION_STRENGTH[deflectTier];
-      const deflectRange = DEFLECTION_RANGE[deflectTier];
+    // Only one pair is considered per frame: the nearest one whose right
+    // edge is still ahead of the rocket. Looking at all pairs in range
+    // would create tug-of-war as the rocket passes between spawns.
+    //
+    // Applied BEFORE the vy clamps below, so guidance forces stay bounded
+    // by maxUp/maxDown — can't launch the rocket offscreen.
+    const guidanceTier = getGuidanceTier();
+    if (focusTime > 0 && guidanceTier > 0) {
+      const gStrength = GUIDANCE_STRENGTH[guidanceTier];
+      const gRange = GUIDANCE_RANGE[guidanceTier];
+      const gDeadzone = GUIDANCE_DEADZONE[guidanceTier];
+      // Find the nearest pair ahead of (or overlapping with) the rocket.
+      // Asteroids are stored as two entries per pair sharing the same x;
+      // we pick the one where top===true and find its partner (top===false,
+      // same x) to compute the gap's vertical extent.
+      let bestPair = null;
+      let bestDist = Infinity;
       for (const a of asteroids) {
-        // x-overlap test: only asteroids we're actually flying into
-        if (rocket.x < a.x - 4 || rocket.x > a.x + a.w + 4) continue;
-        if (a.top) {
-          // Face at bottom of top asteroid (y = a.h). Rocket sits in gap
-          // below the face (rocket.y > a.h). Push DOWN (positive vy).
-          const dy = rocket.y - a.h;
-          if (dy > 0 && dy < deflectRange) {
-            const falloff = 1 - (dy / deflectRange);
-            rocket.vy += deflectStrength * falloff * dt;
-          }
-        } else {
-          // Face at top of bottom asteroid (y = a.y). Rocket sits in gap
-          // above the face (rocket.y < a.y). Push UP (negative vy).
-          const dy = a.y - rocket.y;
-          if (dy > 0 && dy < deflectRange) {
-            const falloff = 1 - (dy / deflectRange);
-            rocket.vy -= deflectStrength * falloff * dt;
+        if (!a.top) continue;
+        // Ignore pairs already fully behind the rocket
+        const rightEdge = a.x + a.w;
+        if (rightEdge < rocket.x - 20) continue;
+        // Distance from rocket to pair center on x
+        const dx = (a.x + a.w / 2) - rocket.x;
+        if (dx > gRange) continue; // too far ahead to guide yet
+        const absDx = Math.abs(dx);
+        if (absDx < bestDist) {
+          bestDist = absDx;
+          bestPair = a;
+        }
+      }
+      if (bestPair) {
+        // Find the matching bottom asteroid (same x). Pairs spawn adjacent
+        // in the array, but linear scan is safe either way — short array.
+        let partner = null;
+        for (const a of asteroids) {
+          if (!a.top && a.x === bestPair.x) { partner = a; break; }
+        }
+        if (partner) {
+          const gapTop = bestPair.h;        // bottom edge of top asteroid
+          const gapBot = partner.y;         // top edge of bottom asteroid
+          const gapCenter = (gapTop + gapBot) / 2;
+          const dy = gapCenter - rocket.y;  // positive → center is below us
+          const absDy = Math.abs(dy);
+          if (absDy > gDeadzone) {
+            // Force magnitude ramps from 0 at deadzone edge to full strength
+            // at gapSize/2 (just inside the wall). Capped at 1.0 scalar.
+            const gapHalf = (gapBot - gapTop) / 2;
+            const ramp = Math.min(1, (absDy - gDeadzone) / Math.max(1, gapHalf - gDeadzone));
+            const force = gStrength * ramp * Math.sign(dy);
+            rocket.vy += force * dt;
           }
         }
       }
@@ -4924,11 +4984,11 @@
       ctx.lineWidth = 1;
     }
     for (const a of asteroids) drawAsteroid(a);
-    // v0.16.0 — Deflection Field shimmer. Gradient glow on each asteroid's
-    // exposed face (within rocket's horizontal reach) during Hyperfocus.
-    // Visualizes where the force field is active. No animation — the field
-    // itself is steady-state. Scales with deflection tier.
-    drawDeflectionField();
+    // v0.18.0 — Guidance System shimmer. Horizontal cyan line at each
+    // upcoming gap's vertical center, showing where the force is pulling
+    // the rocket. Only renders during active Hyperfocus when the Guidance
+    // System upgrade is purchased. No animation — steady-state guidance.
+    drawGuidanceField();
     for (const c of coins) drawCoin(c);
     for (const p of powerups) drawPowerup(p);
     drawParticles();
