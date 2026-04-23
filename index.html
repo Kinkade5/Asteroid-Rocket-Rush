@@ -929,6 +929,82 @@
     margin-top: 4px;
     opacity: 0.85;
   }
+
+  /* === Phase 2 main-menu scoreboard tile === */
+  /* Vague progress indicator toward the NG+ unlock threshold. Deliberately
+     non-interactive — it's a tease, not a button. Subtle violet→cyan
+     gradient on the fill matches the Master tier palette (#c879ff) and
+     the future Stars currency visual language. */
+  .scoreboard-tile {
+    position: relative;
+    margin-top: 16px;
+    padding: 10px 16px 12px;
+    border-radius: 12px;
+    background: rgba(15, 20, 45, 0.45);
+    border: 1px solid rgba(255,255,255,0.08);
+    width: 80%;
+    max-width: 300px;
+    min-width: 220px;
+    text-align: center;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  .scoreboard-tile::before {
+    /* Subtle diagonal sheen hints at "unrevealed content" without being
+       obvious about it. Very low opacity so it doesn't fight the main UI. */
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg,
+      rgba(200, 121, 255, 0.05) 0%,
+      rgba(106, 240, 255, 0.04) 100%);
+    pointer-events: none;
+  }
+  .scoreboard-lock {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    font-size: 10px;
+    opacity: 0.45;
+  }
+  .scoreboard-label {
+    font-size: 9px;
+    letter-spacing: 2.5px;
+    color: rgba(201, 208, 242, 0.55);
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .scoreboard-value {
+    font-size: 20px;
+    font-weight: 800;
+    color: #c9d0f2;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+    margin-bottom: 6px;
+    text-shadow: 0 0 10px rgba(200, 121, 255, 0.15);
+  }
+  .scoreboard-bar {
+    width: 100%;
+    height: 4px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .scoreboard-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #6af0ff 0%, #c879ff 100%);
+    transition: width 0.5s ease-out;
+    box-shadow: 0 0 8px rgba(200, 121, 255, 0.4);
+  }
+  .scoreboard-tease {
+    margin-top: 8px;
+    font-size: 10px;
+    color: rgba(154, 163, 214, 0.55);
+    letter-spacing: 1px;
+    font-style: italic;
+  }
 </style>
 </head>
 <body>
@@ -956,8 +1032,17 @@
     <div class="difficulty-row" id="difficultyRow"></div>
     <button class="btn" id="startBtn">LAUNCH 🚀</button>
     <button class="btn btn-secondary" id="shopBtn" style="margin-top: 14px">SHOP 🛒</button>
-    <div class="hint" id="startHint">Hold to thrust • Space to boost</div>
-    <div class="version-badge" id="versionBadge">v0.11.0</div>
+    <!-- PHASE 2 — vague progress scoreboard toward undisclosed (NG+) unlock.
+         Non-interactive. Updates on page load and after each run. -->
+    <div class="scoreboard-tile" id="scoreboardTile">
+      <div class="scoreboard-lock">🔒</div>
+      <div class="scoreboard-label">LIFETIME PROGRESS</div>
+      <div class="scoreboard-value" id="scoreboardValue">0</div>
+      <div class="scoreboard-bar"><div class="scoreboard-bar-fill" id="scoreboardFill"></div></div>
+      <div class="scoreboard-tease">🔒 Something awaits...</div>
+    </div>
+    <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
+    <div class="version-badge" id="versionBadge">v0.12.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1025,7 +1110,24 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.11.0';
+  const GAME_VERSION = 'v0.12.0';
+
+  // ======================================================================
+  // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
+  // ======================================================================
+  // The Master Shop is fully built (state, persistence, purchase logic) but
+  // NOT exposed in the UI this phase. Phase 4 (NG+ implementation) flips
+  // MASTER_SHOP_AVAILABLE to true and adds the segmented REGULAR/MASTER
+  // control in the existing shop. Everything else is ready to go.
+  //
+  // Why scaffold it now: the save-shape for Stars currency and master
+  // upgrade ownership is settled, so Phase 4 doesn't need a data migration.
+  //
+  // What IS visible this phase: a vague scoreboard on the main menu showing
+  // lifetime coin progress toward NG_PLUS_THRESHOLD. Deliberately opaque
+  // copy to pique curiosity without spoiling the reveal.
+  const MASTER_SHOP_AVAILABLE = false;
+  const NG_PLUS_THRESHOLD = 100000;
 
   // ======================================================================
   // AUDIO ENGINE
@@ -1507,6 +1609,9 @@
   const shopList = document.getElementById('shopList');
   const shopWallet = document.getElementById('shopWallet');
   const coinsEarnedText = document.getElementById('coinsEarnedText');
+  // Phase 2 — scoreboard tile on main menu (lifetime coin progress)
+  const scoreboardValue = document.getElementById('scoreboardValue');
+  const scoreboardFill = document.getElementById('scoreboardFill');
   // Difficulty selector + tier indicators
   const difficultyRow = document.getElementById('difficultyRow');
   const tierBadge = document.getElementById('tierBadge');
@@ -1874,6 +1979,100 @@
   }
   function saveBankedCoins() {
     try { localStorage.setItem('rocketRushBankedCoins', String(bankedCoins)); } catch (_) {}
+  }
+
+  // ======================================================================
+  // PHASE 2 — MASTER SHOP STATE + NG+ PROGRESS TRACKING
+  // ======================================================================
+  // Stars (✦) are the Master Shop currency. No way to earn them yet — that
+  // arrives in Phase 4 with NG+. State exists now so Phase 4 doesn't need
+  // a save-file migration.
+  //
+  // Named `bankedStars` (not just `stars`) for two reasons: (1) mirrors the
+  // existing `bankedCoins` naming pattern, (2) avoids collision with the
+  // pre-existing `stars` array used for the background starfield.
+  let bankedStars = parseInt(localStorage.getItem('rocketRushStars') || '0');
+  function saveBankedStars() {
+    try { localStorage.setItem('rocketRushStars', String(bankedStars)); } catch (_) {}
+  }
+
+  // Lifetime coin tracking — monotonic sum of all coin values ever earned;
+  // never decreases, even from shop spending. Drives the main-menu
+  // scoreboard's progress bar toward the undisclosed NG+ unlock.
+  //
+  // Migration: if the key doesn't exist (existing players), seed from
+  // current bankedCoins so the bar starts populated rather than at 0.
+  // This undercounts historical earnings (spent coins aren't recoverable)
+  // but it's the best we can do without a retroactive log.
+  let lifetimeCoins = loadLifetimeCoins();
+  function loadLifetimeCoins() {
+    const raw = localStorage.getItem('rocketRushLifetimeCoins');
+    if (raw !== null) return parseInt(raw) || 0;
+    const seed = Math.max(0, parseInt(localStorage.getItem('rocketRushBankedCoins') || '0'));
+    try { localStorage.setItem('rocketRushLifetimeCoins', String(seed)); } catch (_) {}
+    return seed;
+  }
+  function saveLifetimeCoins() {
+    try { localStorage.setItem('rocketRushLifetimeCoins', String(lifetimeCoins)); } catch (_) {}
+  }
+
+  // === Master Shop wares ===
+  // Single-purchase items (boolean owned/not-owned), NOT tier stacks —
+  // Master wares are unique capabilities, not stat tweaks. Actual gameplay
+  // effects wire up in Phase 4 alongside NG+; Phase 2 only ships the
+  // definitions + purchase plumbing. Buying does nothing visible anyway
+  // since there's no way to earn Stars yet.
+  //
+  // Names/descriptions are intentionally easy to rename later — they're
+  // string data, not code structure.
+  const MASTER_UPGRADE_DEFS = [
+    { id: 'phoenix_cell',    label: 'Phoenix Cell',    cost: 1,
+      desc: 'First fatal hit leaves you at 1 shield instead. Once per run.' },
+    { id: 'graviton_tether', label: 'Graviton Tether', cost: 3,
+      desc: 'Asteroids subtly deflect from your rocket.' },
+    { id: 'stellar_surplus', label: 'Stellar Surplus', cost: 10,
+      desc: '+5% score multiplier every 10 asteroids passed (caps at +50% per run).' },
+  ];
+  const DEFAULT_MASTER_UPGRADES = {
+    phoenix_cell: false,
+    graviton_tether: false,
+    stellar_surplus: false,
+  };
+  let masterUpgrades = loadMasterUpgrades();
+  function loadMasterUpgrades() {
+    try {
+      const raw = localStorage.getItem('rocketRushMasterUpgrades');
+      if (!raw) return { ...DEFAULT_MASTER_UPGRADES };
+      const parsed = JSON.parse(raw);
+      // Shape-preserving merge — unknown keys from saves are ignored,
+      // missing keys use defaults. Same pattern as loadUpgrades().
+      const result = { ...DEFAULT_MASTER_UPGRADES };
+      for (const id in result) {
+        if (typeof parsed[id] === 'boolean') result[id] = parsed[id];
+      }
+      return result;
+    } catch (_) {
+      return { ...DEFAULT_MASTER_UPGRADES };
+    }
+  }
+  function saveMasterUpgrades() {
+    try { localStorage.setItem('rocketRushMasterUpgrades', JSON.stringify(masterUpgrades)); } catch (_) {}
+  }
+
+  // Purchase handler. Gated on MASTER_SHOP_AVAILABLE so no accidental buys
+  // can happen in Phase 2 even if someone hacks Stars into localStorage.
+  function attemptMasterPurchase(id) {
+    if (!MASTER_SHOP_AVAILABLE) return;
+    const def = MASTER_UPGRADE_DEFS.find(d => d.id === id);
+    if (!def) return;
+    if (masterUpgrades[def.id]) return; // already owned
+    if (bankedStars < def.cost) return;
+    bankedStars -= def.cost;
+    masterUpgrades[def.id] = true;
+    saveBankedStars();
+    saveMasterUpgrades();
+    Audio.play.coinGold();
+    if (navigator.vibrate) navigator.vibrate(20);
   }
 
   // === Effective (upgraded) powerup values ===
@@ -2577,6 +2776,17 @@
     }
   }
 
+  // Phase 2 scoreboard — updates the vague progress tile on the main menu.
+  // Called on page load and after each run (via gameOver). The progress
+  // value is lifetimeCoins / NG_PLUS_THRESHOLD; visually caps at 100% even
+  // if lifetime exceeds threshold, since nothing happens at 100% yet.
+  function refreshScoreboardUI() {
+    if (!scoreboardValue || !scoreboardFill) return;
+    scoreboardValue.textContent = lifetimeCoins.toLocaleString();
+    const pct = Math.min(100, (lifetimeCoins / NG_PLUS_THRESHOLD) * 100);
+    scoreboardFill.style.width = pct.toFixed(2) + '%';
+  }
+
   // ===== Difficulty selector =====
   // Builds the 4-tile selector on the start menu. Rebuilt whenever unlock
   // state changes (so Master transitions from locked → selectable without
@@ -3016,8 +3226,13 @@
     const coinsThisRun = runCoins;
     bankedCoins += coinsThisRun;
     saveBankedCoins();
+    // Lifetime coins — monotonic total, drives main-menu NG+ scoreboard.
+    // Never decreases (shop spending only affects bankedCoins).
+    lifetimeCoins += coinsThisRun;
+    saveLifetimeCoins();
     coinsEarnedText.textContent = `+${coinsThisRun.toLocaleString()} banked (${bankedCoins.toLocaleString()} total)`;
     refreshWalletUI();
+    refreshScoreboardUI();
 
     // Populate game-over UI
     refreshGameoverTier();
@@ -4093,20 +4308,11 @@
   setButtonsEnabled(shopScreen, false);
   setButtonsEnabled(settingsScreen, false);
   refreshWalletUI();  // show current banked coins on main menu
+  refreshScoreboardUI();  // Phase 2: show lifetime coins + NG+ progress bar
   renderDifficultySelector();  // build the 4 tiles (Master locked unless unlocked)
-  // Swap hint text based on device. `pointer: coarse` is the most reliable
-  // touch-detection signal on modern mobile browsers; fall back to the
-  // legacy `ontouchstart` check for older Androids and niche browsers.
-  const isTouchDevice =
-    'ontouchstart' in window ||
-    (navigator.maxTouchPoints && navigator.maxTouchPoints > 0) ||
-    window.matchMedia('(pointer: coarse)').matches;
-  const startHintEl = document.getElementById('startHint');
-  if (startHintEl) {
-    startHintEl.textContent = isTouchDevice
-      ? 'Hold to thrust • Tap to boost'
-      : 'Hold to thrust • Space to boost';
-  }
+  // Hint text is baked into the HTML as mobile-first copy ("Tap to boost")
+  // since this is primarily a mobile game. PC testing uses the same string —
+  // clicking the canvas still behaves like a "tap" for the pointer input.
   requestAnimationFrame(loop);
 
   // Service worker registration — enabled for HTTPS deployment (Netlify, etc.)
