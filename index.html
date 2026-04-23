@@ -555,6 +555,56 @@
   .shop-back-btn:active { transform: scale(0.9); }
   .shop-back-btn.visible { opacity: 1; pointer-events: auto; }
 
+  /* === Segmented control — shop sub-shop tabs === */
+  /* Added in Phase 2.5 for UPGRADES / HANGAR split. Phase 4 will add a
+     MASTER tab to the same container (filtered in by SHOP_TABS flags).
+     Full-width pill with per-tab active colors so players get an at-a-
+     glance cue for which sub-shop they're spending currency in. */
+  .shop-segmented {
+    display: flex;
+    gap: 3px;
+    padding: 3px;
+    background: rgba(10, 15, 40, 0.55);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    width: 92%;
+    max-width: 420px;
+    margin-bottom: 12px;
+  }
+  .shop-tab {
+    flex: 1;
+    padding: 8px 10px;
+    background: transparent;
+    border: none;
+    color: #9aa3d6;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+  }
+  .shop-tab:active { transform: scale(0.96); }
+  /* Tab-specific active colors: gold for upgrades (coin currency), cyan
+     for hangar (rocket/physics palette), violet for master (future,
+     stars currency). Using [data-tab=...] keeps the CSS expressive. */
+  .shop-tab.active[data-tab="upgrades"] {
+    background: rgba(255, 216, 107, 0.15);
+    color: #ffd86b;
+    box-shadow: 0 0 8px rgba(255, 216, 107, 0.25);
+  }
+  .shop-tab.active[data-tab="hangar"] {
+    background: rgba(106, 240, 255, 0.15);
+    color: #6af0ff;
+    box-shadow: 0 0 8px rgba(106, 240, 255, 0.25);
+  }
+  .shop-tab.active[data-tab="master"] {
+    background: rgba(200, 121, 255, 0.15);
+    color: #c879ff;
+    box-shadow: 0 0 8px rgba(200, 121, 255, 0.25);
+  }
+
   /* Category grid — default view when the shop opens */
   .shop-categories {
     display: grid;
@@ -1042,7 +1092,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.12.0</div>
+    <div class="version-badge" id="versionBadge">v0.14.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1078,10 +1128,16 @@
       <div class="shop-title" id="shopTitle">UPGRADES</div>
       <div class="wallet-badge wallet-inline"><span class="coin-icon">●</span><span id="shopWallet">0</span></div>
     </div>
-    <!-- Category grid — default view -->
+    <!-- Segmented control — tabs across sub-shops. Rendered dynamically
+         in JS from SHOP_TABS so Phase 4 can drop in a MASTER tab without
+         HTML changes. Hidden entirely if only one tab is visible. -->
+    <div class="shop-segmented" id="shopSegmented"></div>
+    <!-- UPGRADES tab: category grid — default view -->
     <div class="shop-categories" id="shopCategories"></div>
-    <!-- Upgrade list — shown when a category is selected -->
+    <!-- UPGRADES tab: upgrade list when a category is drilled into -->
     <div class="shop-list" id="shopList"></div>
+    <!-- HANGAR tab: flat list of Propulsion / Integrity upgrades -->
+    <div class="shop-list" id="shopHangarList"></div>
     <button class="btn btn-secondary" id="shopCloseBtn" style="margin-top: 16px">CLOSE</button>
   </div>
 
@@ -1110,7 +1166,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.12.0';
+  const GAME_VERSION = 'v0.14.0';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -1607,6 +1663,10 @@
   const shopTitle = document.getElementById('shopTitle');
   const shopCategoriesEl = document.getElementById('shopCategories');
   const shopList = document.getElementById('shopList');
+  // Phase 2.5 — segmented control (UPGRADES / HANGAR tabs) and the
+  // Hangar tab's flat upgrade list container.
+  const shopSegmentedEl = document.getElementById('shopSegmented');
+  const shopHangarListEl = document.getElementById('shopHangarList');
   const shopWallet = document.getElementById('shopWallet');
   const coinsEarnedText = document.getElementById('coinsEarnedText');
   // Phase 2 — scoreboard tile on main menu (lifetime coin progress)
@@ -1651,12 +1711,15 @@
     trail: [],
   };
 
-  // === TUNED PHYSICS ===
-  const GRAVITY = 0.52;
+  // === TUNED PHYSICS (base values — Hangar upgrades scale these) ===
+  // THRUST, GRAVITY, MAX_UP_VY, MAX_DOWN_VY are now read via getters
+  // (getThrust(), getGravity(), etc.) that apply Hangar upgrade multipliers.
+  // The raw constants stay here as BASE_* for reference and baseline math.
+  const BASE_GRAVITY = 0.52;
   const FLAP = -7.4;
-  const THRUST = -1.05;
-  const MAX_UP_VY = -7.5;
-  const MAX_DOWN_VY = 11;
+  const BASE_THRUST = -1.05;
+  const BASE_MAX_UP_VY = -7.5;
+  const BASE_MAX_DOWN_VY = 11;
   const SCROLL = 2.4;
 
   // === SCORING ===
@@ -1820,7 +1883,7 @@
   // The `_BASE` values below are the baseline (tier 0) — what a brand-new
   // player with no upgrades gets. Actual runtime values come from the
   // getter functions further down, which factor in purchased tiers.
-  const FOCUS_DUR = 4000;
+  const FOCUS_DUR_BASE = 4000;
 
   // === Hyperfocus timescale getter ===
   // Tier-aware world timescale while Hyperfocus is active. Lower value =
@@ -1865,7 +1928,49 @@
     // tier is a named ability (Blast/Shock/Nova) that adds a new effect on
     // shield pop. Display logic maps the integer to a label via `format`.
     reactiveTier:     [0, 1, 2, 3],
+    // === Hangar upgrades (Phase 2.5) ===
+    // Stage-based like Reactive Shields — each tier is a named stage of
+    // the upgrade, not a numerical value. The actual physics multipliers
+    // live in PROPULSION_*_MULT and INTEGRITY_*_MULT below.
+    propulsionTier: [0, 1, 2, 3],
+    integrityTier:  [0, 1, 2, 3],
+    // === Hyperfocus upgrades (v0.14.0) ===
+    // Focus Duration is value-based (ms); Deflection Field and Focus
+    // Tempo are stage-based. Duration upgrade replaces the old FOCUS_DUR
+    // constant — getFocusDuration() reads from this table.
+    focusDurationMs: [FOCUS_DUR_BASE, 5500, 7000, 9000],
+    deflectionTier:  [0, 1, 2, 3],
+    focusTempoTier:  [0, 1, 2, 3],
   };
+
+  // === Hangar multipliers (Phase 2.5) ===
+  // Separate tables per axis so the "feel" axis (thrust/gravity) and the
+  // "ceiling" axis (max velocity caps) can be tuned independently. Starting
+  // values are conservative — rebalancing is just tweaking these arrays.
+  //
+  // Propulsion: stronger thrust + higher climb ceiling.
+  //   v0.14.0: dialed down from the original +50%/+30% at T3 to +25%/+15%.
+  //   The original values trivialized dodging during Hyperfocus (where the
+  //   world slows but rocket physics stay at full dt — compound effect gave
+  //   ~2.7× dodging advantage at max Propulsion). These more modest values
+  //   keep each tier feeling meaningful while preserving challenge.
+  const PROPULSION_THRUST_MULT = [1.00, 1.08, 1.16, 1.25];
+  const PROPULSION_MAX_VY_MULT = [1.00, 1.05, 1.10, 1.15];
+  //   Integrity: less gravity + softer terminal fall velocity.
+  //   T3 gives 28% less gravity and 15% lower terminal velocity — noticeable
+  //   floatiness without breaking the "weight" feel of the rocket entirely.
+  const INTEGRITY_GRAVITY_MULT = [1.00, 0.90, 0.80, 0.72];
+  const INTEGRITY_MAX_VY_MULT  = [1.00, 0.95, 0.90, 0.85];
+
+  // === Deflection Field constants (v0.14.0 — Hyperfocus category) ===
+  // During Hyperfocus, if the Deflection Field upgrade is purchased,
+  // asteroid faces push the rocket's vy away from collision. Strength is
+  // applied per-frame with dt scaling, softened by proximity falloff
+  // (1 - dist/range). Values are conservative starting points — tune post-
+  // playtest. At T3, peak force near the face is 0.60 vy/frame — meaningful
+  // but still dominated by player-controlled thrust and gravity.
+  const DEFLECTION_STRENGTH = [0, 0.15, 0.35, 0.60];
+  const DEFLECTION_RANGE    = [0, 18,   28,   40];
 
   // === Reactive Shields constants ===
   // Blast radius grows per tier. Measured in logical px (canvas BASE coords).
@@ -1921,6 +2026,39 @@
       valueTable: 'reactiveTier',
       format: v => ['None', 'Blast 💥', 'Shock ⚡', 'Nova 🌟'][v],
       costTable: REACTIVE_COSTS },
+    // === Hangar (Phase 2.5) — rocket physics upgrades ===
+    // category='hangar' keeps these out of the regular category grid.
+    // The HANGAR tab renders them as a flat list (no drill-in level).
+    { id: 'hangar_propulsion', category: 'hangar', line: 'hangar', stat: 'propulsion',
+      label: 'Propulsion Core',
+      desc: 'Stronger thrust acceleration and higher climb velocity',
+      valueTable: 'propulsionTier',
+      format: v => ['Stock', 'Turbo Injectors', 'Afterburners', 'Overdrive Reactor'][v] },
+    { id: 'hangar_integrity', category: 'hangar', line: 'hangar', stat: 'integrity',
+      label: 'Structural Integrity',
+      desc: 'Reduced gravity and softer terminal velocity',
+      valueTable: 'integrityTier',
+      format: v => ['Stock', 'Reinforced Frame', 'Adaptive Dampeners', 'Inertial Stabilizer'][v] },
+    // === Hyperfocus (v0.14.0) — duration, deflection field, stacking ===
+    // Focus Duration is value-based (extends the 4s base). Deflection is
+    // stage-based (repulsion field during active). Focus Tempo is stage-
+    // based (changes pickup-while-active behavior: refresh → stack with cap
+    // → stack uncapped).
+    { id: 'hyperfocus_duration', category: 'hyperfocus', line: 'hyperfocus', stat: 'duration',
+      label: 'Focus Duration',
+      desc: 'Hyperfocus lasts longer when activated',
+      valueTable: 'focusDurationMs',
+      format: v => (v / 1000).toFixed(1) + 's' },
+    { id: 'hyperfocus_deflection', category: 'hyperfocus', line: 'hyperfocus', stat: 'deflection',
+      label: 'Deflection Field',
+      desc: 'During Hyperfocus, asteroid faces push you gently away',
+      valueTable: 'deflectionTier',
+      format: v => ['Off', 'Gentle', 'Strong', 'Forcefield'][v] },
+    { id: 'hyperfocus_tempo', category: 'hyperfocus', line: 'hyperfocus', stat: 'tempo',
+      label: 'Focus Tempo',
+      desc: 'Picking up Hyperfocus during active extends duration (vs. refresh)',
+      valueTable: 'focusTempoTier',
+      format: v => ['Stock', 'Overflow (2× cap)', 'Compound (3× cap)', 'Unbound (no cap)'][v] },
   ];
 
   // Shop categories — order in this array is the display order in the grid.
@@ -1934,6 +2072,11 @@
       tagline: 'Reach, strength, duration' },
     { id: 'double', name: 'Multiplier', icon: '2✕', color: '#ffb84d',
       tagline: 'Score multiplier & duration' },
+    // v0.14.0 — Hyperfocus category. Uses the same cyan palette as the
+    // in-game Hyperfocus visual identity (edge vignette, object halos).
+    // Icon matches the 🎯 pickup badge glyph from POWERUP_DEFS.slowmo.
+    { id: 'hyperfocus', name: 'Hyperfocus', icon: '🎯', color: '#6af0ff',
+      tagline: 'Duration, deflection, stacking' },
   ];
 
   // === Persistent currency ===
@@ -1949,6 +2092,14 @@
     magnet: { radius: 0, strength: 0, duration: 0 },
     double: { power: 0, duration: 0 },
     shield: { hull: 0, overcharge: 0, reactive: 0 },
+    // Phase 2.5 — Hangar (rocket physics). Two stage-based upgrades that
+    // scale the rocket's physics constants via getters. Same save-shape
+    // pattern as shield.reactive (integer tier, 0-3).
+    hangar: { propulsion: 0, integrity: 0 },
+    // v0.14.0 — Hyperfocus category. Duration extends active time, deflection
+    // adds a repulsion field around asteroid faces while active, tempo
+    // controls how picking up Hyperfocus during an active buff behaves.
+    hyperfocus: { duration: 0, deflection: 0, tempo: 0 },
   };
   let upgrades = loadUpgrades();
 
@@ -2111,6 +2262,34 @@
   function hasReactiveShock() { return getReactiveTier() >= 2; }
   function hasReactiveNova()  { return getReactiveTier() >= 3; }
 
+  // === Hangar (rocket physics) getters — Phase 2.5 ===
+  // Applied to the base physics constants in the update() loop. Called
+  // once per frame and aliased locally (see update() for the pattern).
+  // Propulsion scales THRUST (acceleration) and MAX_UP_VY (climb ceiling)
+  // together. Integrity scales GRAVITY and MAX_DOWN_VY (terminal velocity)
+  // together — both multipliers < 1, so both values shrink in magnitude.
+  function getThrust()     { return BASE_THRUST      * PROPULSION_THRUST_MULT[upgrades.hangar.propulsion]; }
+  function getMaxUpVy()    { return BASE_MAX_UP_VY   * PROPULSION_MAX_VY_MULT[upgrades.hangar.propulsion]; }
+  function getGravity()    { return BASE_GRAVITY     * INTEGRITY_GRAVITY_MULT[upgrades.hangar.integrity]; }
+  function getMaxDownVy()  { return BASE_MAX_DOWN_VY * INTEGRITY_MAX_VY_MULT[upgrades.hangar.integrity]; }
+
+  // === Hyperfocus getters (v0.14.0) ===
+  // getFocusDuration returns the T-tier ms value from TIER_VALUES.
+  // getDeflectionTier / getFocusTempoTier return the raw 0-3 integer so
+  // callers can switch on it (stage-based upgrades). getFocusTempoCap
+  // computes the max stacked duration based on tempo tier — used in the
+  // pickup handler to clamp stacked focus time.
+  function getFocusDuration()   { return TIER_VALUES.focusDurationMs[upgrades.hyperfocus.duration]; }
+  function getDeflectionTier()  { return upgrades.hyperfocus.deflection; }
+  function getFocusTempoTier()  { return upgrades.hyperfocus.tempo; }
+  function getFocusTempoCap() {
+    const tier = getFocusTempoTier();
+    const base = getFocusDuration();
+    // T0: no stacking (cap == base). T1: 2× cap. T2: 3× cap. T3: uncapped.
+    if (tier >= 3) return Infinity;
+    return base * (1 + tier);
+  }
+
   let asteroids = [];
   let powerups = [];
   let coins = [];
@@ -2136,6 +2315,11 @@
   let shieldPopEffect = 0;
   // Duration powerups
   let focusTime = 0;               // Hyperfocus active time (ms)
+  // v0.14.0 — peak duration for this activation. Used by the sweep animation
+  // and progress bar so they scale correctly with variable Focus Duration
+  // upgrade values AND handle Focus Tempo stacking (when stacking bumps
+  // focusTime above the prior max, focusTimeMax follows).
+  let focusTimeMax = 0;
   let doubleTime = 0;              // NEW — 2x multiplier time left (ms)
   let magnetTime = 0;              // NEW — magnet time left (ms)
   let shockTime = 0;               // Shock/Nova 2× window (real-time decay, ms)
@@ -2227,6 +2411,7 @@
     shieldIFrameUntil = 0;
     shieldPopEffect = 0;
     focusTime = 0;
+    focusTimeMax = 0;
     doubleTime = 0;
     magnetTime = 0;
     shockTime = 0;
@@ -2864,6 +3049,33 @@
   // Used by back/close buttons to know what to do.
   let currentShopCategory = null;
 
+  // ===== Phase 2.5 — sub-shop tabs =====
+  // The shop has a segmented control at the top that switches between
+  // UPGRADES (the existing category-based shop) and HANGAR (rocket physics
+  // upgrades, flat list). Phase 4 will add a MASTER tab behind the
+  // MASTER_SHOP_AVAILABLE + isMasterUnlocked() gates.
+  //
+  // Tab order here = display order in the segmented control.
+  const SHOP_TABS = [
+    { id: 'upgrades', label: 'UPGRADES' },
+    { id: 'hangar',   label: 'HANGAR' },
+    // Phase 4:
+    // { id: 'master', label: 'MASTER' },
+  ];
+  let currentShopTab = 'upgrades';
+
+  // Which tabs are visible right now. Phase 4's MASTER tab will be filtered
+  // in here once MASTER_SHOP_AVAILABLE flips on. Keeping the filter in one
+  // place means the rendering code stays simple.
+  function getVisibleShopTabs() {
+    return SHOP_TABS.filter(t => {
+      if (t.id === 'master') {
+        return MASTER_SHOP_AVAILABLE && isMasterUnlocked();
+      }
+      return true;
+    });
+  }
+
   // Count "tiers purchased" across a category — used for the progress badge
   // on category tiles ("2/9 upgraded" etc.) so the player sees at a glance
   // which category they've invested in most.
@@ -2897,16 +3109,66 @@
     for (const cat of CATEGORIES) {
       if (categoryHasAffordableUpgrade(cat.id)) return true;
     }
+    // Hangar isn't in CATEGORIES (it has its own tab, not a grid tile) —
+    // but its upgrades also get the "affordable" cyan halo on the SHOP
+    // button when purchasable.
+    if (categoryHasAffordableUpgrade('hangar')) return true;
     return false;
+  }
+
+  // ===== Shop rendering — segmented control (UPGRADES / HANGAR tabs) =====
+  // Rebuilt on every render so the `.active` highlight always reflects
+  // currentShopTab. Cheap enough — the control is tiny (2-3 buttons).
+  // Hidden entirely if only one tab would be visible (e.g., if Phase 4's
+  // MASTER is gated off and future tab filters reduce us to one).
+  function renderShopSegmentedControl() {
+    if (!shopSegmentedEl) return;
+    const tabs = getVisibleShopTabs();
+    if (tabs.length <= 1) {
+      shopSegmentedEl.style.display = 'none';
+      return;
+    }
+    shopSegmentedEl.style.display = '';
+    shopSegmentedEl.innerHTML = tabs.map(t =>
+      `<button class="shop-tab${t.id === currentShopTab ? ' active' : ''}" data-tab="${t.id}">${t.label}</button>`
+    ).join('');
+    shopSegmentedEl.querySelectorAll('.shop-tab').forEach(btn => {
+      btn.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const tabId = btn.getAttribute('data-tab');
+        switchShopTab(tabId);
+      });
+    });
+  }
+
+  // Tab-change handler. Resets the per-tab drill-in state (category) on
+  // switch so you don't land inside a stale category from a previous
+  // UPGRADES visit. Routes to the correct home render per tab.
+  function switchShopTab(tabId) {
+    if (currentShopTab === tabId) return;
+    currentShopTab = tabId;
+    currentShopCategory = null;
+    Audio.play.uiClick();
+    if (tabId === 'hangar') {
+      renderHangarUpgrades();
+    } else {
+      // 'upgrades' (and Phase-4 future tabs route here by default)
+      renderShopCategories();
+    }
   }
 
   // ===== Shop rendering — category grid =====
   function renderShopCategories() {
     refreshWalletUI();
+    renderShopSegmentedControl();
     shopTitle.textContent = 'UPGRADES';
     shopBackBtn.classList.remove('visible');
     shopCategoriesEl.classList.remove('hidden-view');
     shopList.classList.add('hidden-view');
+    // Phase 2.5 — hide the hangar list when we're back on the UPGRADES
+    // category grid (it would otherwise persist from a previous tab visit).
+    if (shopHangarListEl) shopHangarListEl.classList.add('hidden-view');
 
     let html = '';
     for (const cat of CATEGORIES) {
@@ -2953,41 +3215,52 @@
     shopBackBtn.classList.add('visible');
     shopCategoriesEl.classList.add('hidden-view');
     shopList.classList.remove('hidden-view');
+    // Phase 2.5 — defense-in-depth: hangar list should already be hidden
+    // since you can only drill into a category from the UPGRADES tab, but
+    // hide explicitly in case future code flows this differently.
+    if (shopHangarListEl) shopHangarListEl.classList.add('hidden-view');
     renderCategoryUpgrades(catId);
   }
 
   function renderCategoryUpgrades(catId) {
     refreshWalletUI();
+    renderShopSegmentedControl();
     const defs = UPGRADE_DEFS.filter(d => d.category === catId);
-    let html = '';
-    for (const def of defs) {
-      const currentTier = upgrades[def.line][def.stat];
-      const isMaxed = currentTier >= MAX_UPGRADE_TIER;
-      const nextTier = currentTier + 1;
-      const costs = def.costTable || UPGRADE_COSTS;
-      const cost = isMaxed ? null : costs[nextTier];
-      const canAfford = !isMaxed && bankedCoins >= cost;
-      const vals = TIER_VALUES[def.valueTable];
-      const currentVal = def.format(vals[currentTier]);
-      const nextVal = isMaxed ? null : def.format(vals[nextTier]);
+    shopList.innerHTML = defs.map(buildUpgradeCardHtml).join('');
+    wireUpgradeBuyButtons(shopList);
+  }
 
-      let pips = '';
-      for (let t = 1; t <= MAX_UPGRADE_TIER; t++) {
-        pips += `<span class="upgrade-tier-pip${t <= currentTier ? ' filled' : ''}"></span>`;
-      }
+  // Shared card-HTML builder — used by renderCategoryUpgrades (UPGRADES
+  // tab, drilled-into-category) and renderHangarUpgrades (HANGAR tab,
+  // flat list). Kept stateless: same def shape, same markup output.
+  function buildUpgradeCardHtml(def) {
+    const currentTier = upgrades[def.line][def.stat];
+    const isMaxed = currentTier >= MAX_UPGRADE_TIER;
+    const nextTier = currentTier + 1;
+    const costs = def.costTable || UPGRADE_COSTS;
+    const cost = isMaxed ? null : costs[nextTier];
+    const canAfford = !isMaxed && bankedCoins >= cost;
+    const vals = TIER_VALUES[def.valueTable];
+    const currentVal = def.format(vals[currentTier]);
+    const nextVal = isMaxed ? null : def.format(vals[nextTier]);
 
-      let btnHtml;
-      if (isMaxed) {
-        btnHtml = `<button class="upgrade-buy maxed" disabled>MAXED</button>`;
-      } else {
-        btnHtml = `<button class="upgrade-buy" data-upgrade="${def.id}"${canAfford ? '' : ' disabled'}>${cost.toLocaleString()}</button>`;
-      }
+    let pips = '';
+    for (let t = 1; t <= MAX_UPGRADE_TIER; t++) {
+      pips += `<span class="upgrade-tier-pip${t <= currentTier ? ' filled' : ''}"></span>`;
+    }
 
-      const valuesRow = isMaxed
-        ? `<div class="upgrade-values">Max tier reached</div>`
-        : `<div class="upgrade-values">${currentVal}<span class="arrow">→</span><span class="next">${nextVal}</span></div>`;
+    let btnHtml;
+    if (isMaxed) {
+      btnHtml = `<button class="upgrade-buy maxed" disabled>MAXED</button>`;
+    } else {
+      btnHtml = `<button class="upgrade-buy" data-upgrade="${def.id}"${canAfford ? '' : ' disabled'}>${cost.toLocaleString()}</button>`;
+    }
 
-      html += `
+    const valuesRow = isMaxed
+      ? `<div class="upgrade-values">Max tier reached</div>`
+      : `<div class="upgrade-values">${currentVal}<span class="arrow">→</span><span class="next">${nextVal}</span></div>`;
+
+    return `
         <div class="upgrade-card">
           <div class="upgrade-header">
             <div class="upgrade-label">${def.label}</div>
@@ -2997,10 +3270,14 @@
           ${valuesRow}
           ${btnHtml}
         </div>`;
-    }
-    shopList.innerHTML = html;
+  }
 
-    shopList.querySelectorAll('.upgrade-buy[data-upgrade]').forEach(btn => {
+  // Wire buy-button pointerdown handlers on any container holding upgrade
+  // cards. Same handler signature as the regular shop — route to
+  // attemptPurchase (coins currency). Phase 4's MASTER tab will use its
+  // own wire function pointed at attemptMasterPurchase.
+  function wireUpgradeBuyButtons(containerEl) {
+    containerEl.querySelectorAll('.upgrade-buy[data-upgrade]').forEach(btn => {
       btn.addEventListener('pointerdown', (e) => {
         if (btn.disabled) return;
         e.stopPropagation();
@@ -3011,9 +3288,32 @@
     });
   }
 
+  // ===== Shop rendering — HANGAR tab (Phase 2.5) =====
+  // Flat list of rocket physics upgrades (Propulsion Core + Structural
+  // Integrity). Skips the category-grid level entirely since there's only
+  // one conceptual category here — no drill-in needed. If more Hangar
+  // categories ever land (e.g. Flight Control), reintroduce a grid level.
+  function renderHangarUpgrades() {
+    refreshWalletUI();
+    renderShopSegmentedControl();
+    shopTitle.textContent = 'HANGAR';
+    // No drill-in on this tab, so no back button.
+    shopBackBtn.classList.remove('visible');
+    // Hide the UPGRADES-tab panes, show the hangar list pane.
+    shopCategoriesEl.classList.add('hidden-view');
+    shopList.classList.add('hidden-view');
+    if (!shopHangarListEl) return;
+    shopHangarListEl.classList.remove('hidden-view');
+    const defs = UPGRADE_DEFS.filter(d => d.category === 'hangar');
+    shopHangarListEl.innerHTML = defs.map(buildUpgradeCardHtml).join('');
+    wireUpgradeBuyButtons(shopHangarListEl);
+  }
+
   // Called after any purchase — refreshes whichever view is currently open.
   function refreshShopView() {
-    if (currentShopCategory) {
+    if (currentShopTab === 'hangar') {
+      renderHangarUpgrades();
+    } else if (currentShopCategory) {
       renderCategoryUpgrades(currentShopCategory);
     } else {
       renderShopCategories();
@@ -3047,6 +3347,7 @@
     e.preventDefault();
     ensureAudio();
     Audio.play.uiClick();
+    currentShopTab = 'upgrades'; // always land on UPGRADES tab on entry
     currentShopCategory = null; // always open on the category grid
     renderShopCategories();
     hideOverlay(startScreen);
@@ -3143,6 +3444,7 @@
     shieldIFrameUntil = 0;
     shieldPopEffect = 0;
     focusTime = 0;
+    focusTimeMax = 0;
     doubleTime = 0;
     magnetTime = 0;
     shockTime = 0;
@@ -3763,12 +4065,20 @@
     const worldScale = getFocusTimescale();
     const sdt = dt * worldScale;
 
+    // Alias Hangar-modifiable physics values once per frame. Getters are
+    // cheap (single array lookup + multiply) but reading them via locals
+    // keeps the per-frame hot path neat and reads naturally.
+    const thrust = getThrust();
+    const gravity = getGravity();
+    const maxUp = getMaxUpVy();
+    const maxDown = getMaxDownVy();
+
     // Sync the looped thrust audio to whatever `thrusting` is right now.
     syncThrustSound();
 
     // Hold-to-thrust — rocket physics run on raw dt, unscaled by Hyperfocus
     if (state === STATE.PLAY && thrusting) {
-      rocket.vy += THRUST * dt;
+      rocket.vy += thrust * dt;
       if (Math.random() < 0.65) {
         addParticles(rocket.x - 14, rocket.y + 4, {
           n: 2, color: '#ffb84d', speed: 1.8, life: 18, vx: -2.5,
@@ -3778,9 +4088,52 @@
 
     // Physics — rocket runs on raw dt so Hyperfocus doesn't remove the
     // challenge of gravity (just the world is perceived slower)
-    rocket.vy += GRAVITY * dt;
-    if (rocket.vy < MAX_UP_VY) rocket.vy = MAX_UP_VY;
-    if (rocket.vy > MAX_DOWN_VY) rocket.vy = MAX_DOWN_VY;
+    rocket.vy += gravity * dt;
+
+    // === Deflection Field (v0.14.0 — Hyperfocus upgrade) ===
+    // While Hyperfocus is active AND the Deflection Field upgrade is
+    // purchased, asteroid exposed faces apply a gentle vy nudge on the
+    // rocket, pushing it away from imminent collisions. Scales by proximity
+    // (1 - dist/range), so the force peaks at the face and vanishes at
+    // range edge. Only considers asteroids whose x-range overlaps the
+    // rocket (nothing else can realistically threaten a collision).
+    //
+    // Applied BEFORE the vy clamps below, so deflection forces also get
+    // bounded by maxUp/maxDown — can't launch the rocket offscreen.
+    //
+    // NOTE: if the rocket is exactly centered between top and bottom
+    // asteroids in a tight gap, both forces roughly cancel out. That's
+    // fine — the effect is meant to correct near-miss trajectories, not
+    // to replace player input.
+    const deflectTier = getDeflectionTier();
+    if (focusTime > 0 && deflectTier > 0) {
+      const deflectStrength = DEFLECTION_STRENGTH[deflectTier];
+      const deflectRange = DEFLECTION_RANGE[deflectTier];
+      for (const a of asteroids) {
+        // x-overlap test: only asteroids we're actually flying into
+        if (rocket.x < a.x - 4 || rocket.x > a.x + a.w + 4) continue;
+        if (a.top) {
+          // Face at bottom of top asteroid (y = a.h). Rocket sits in gap
+          // below the face (rocket.y > a.h). Push DOWN (positive vy).
+          const dy = rocket.y - a.h;
+          if (dy > 0 && dy < deflectRange) {
+            const falloff = 1 - (dy / deflectRange);
+            rocket.vy += deflectStrength * falloff * dt;
+          }
+        } else {
+          // Face at top of bottom asteroid (y = a.y). Rocket sits in gap
+          // above the face (rocket.y < a.y). Push UP (negative vy).
+          const dy = a.y - rocket.y;
+          if (dy > 0 && dy < deflectRange) {
+            const falloff = 1 - (dy / deflectRange);
+            rocket.vy -= deflectStrength * falloff * dt;
+          }
+        }
+      }
+    }
+
+    if (rocket.vy < maxUp) rocket.vy = maxUp;
+    if (rocket.vy > maxDown) rocket.vy = maxDown;
 
     rocket.y += rocket.vy * dt;
     rocket.rot = Math.max(-0.5, Math.min(1.0, rocket.vy * 0.08));
@@ -4023,7 +4376,24 @@
           }
           Audio.play.shieldPickup();
         } else if (p.type === 'slowmo') {
-          focusTime = FOCUS_DUR;
+          // v0.14.0 — Focus Duration upgrade controls base duration;
+          // Focus Tempo controls what happens on pickup while already active.
+          //   T0 (Stock):     refresh to base duration
+          //   T1 (Overflow):  stack +base, cap at 2× base
+          //   T2 (Compound):  stack +base, cap at 3× base
+          //   T3 (Unbound):   stack +base, no cap
+          // focusTimeMax tracks the peak active duration so the activation
+          // sweep animation and progress-bar ratio stay meaningful through
+          // stacking (each stack "re-activates" the sweep since focusTime
+          // jumps back near max).
+          const baseDur = getFocusDuration();
+          const tempo = getFocusTempoTier();
+          if (focusTime > 0 && tempo > 0) {
+            focusTime = Math.min(getFocusTempoCap(), focusTime + baseDur);
+          } else {
+            focusTime = baseDur;
+          }
+          focusTimeMax = Math.max(focusTimeMax, focusTime);
           popups.push({
             x: p.x, y: p.y, text: 'HYPERFOCUS',
             kind: 'slowmo', life: 50, maxLife: 50,
@@ -4146,7 +4516,7 @@
       const expiring = timeLeft < WARN_MS ? ' expiring' : '';
       return `<div class="pu-badge ${type}${expiring}">${def.icon} ${def.label} <div class="pu-bar"><div style="transform:scaleX(${pct})"></div></div></div>`;
     }
-    if (focusTime  > 0) html += durBadge('slowmo', focusTime, FOCUS_DUR);
+    if (focusTime  > 0) html += durBadge('slowmo', focusTime, focusTimeMax);
     if (doubleTime > 0) html += durBadge('double', doubleTime, getDoubleDuration());
     if (magnetTime > 0) html += durBadge('magnet', magnetTime, getMagnetDuration());
     if (shockTime  > 0) html += durBadge('shock',  shockTime,  SHOCK_DUR);
@@ -4244,7 +4614,7 @@
       // One-time scan-line sweep at activation — runs through the first
       // ~500ms of the buff. Creates a bright cyan horizontal line that
       // travels top-to-bottom once, like a targeting lens initializing.
-      const sweepProgress = (FOCUS_DUR - focusTime) / 500;
+      const sweepProgress = (focusTimeMax - focusTime) / 500;
       if (sweepProgress >= 0 && sweepProgress <= 1) {
         const sweepY = sweepProgress * BASE_H;
         const sweepAlpha = 0.35 * (1 - sweepProgress); // fades as it descends
