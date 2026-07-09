@@ -114,6 +114,58 @@
     60%  { transform: scale(1.15); opacity: 1; }
     100% { transform: scale(1); opacity: 1; }
   }
+  /* === Multiplier milestone popup (v0.22.0) === */
+  /* Brief center-screen callout when the COMBINED score multiplier
+     (2× powerup × Shock × Stellar Surplus) crosses 5× / 10×. The small
+     HUD badges are easy to miss mid-run, so this makes a hot streak
+     unmissable. Non-interactive; self-hides via the animation (ends at
+     opacity 0), so no JS timer is needed. Sits below the countdown (z 5)
+     but above the HUD. */
+  .mult-popup {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 4;
+  }
+  .mult-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    opacity: 0;               /* default hidden; the animation drives it up + back down */
+  }
+  .mult-inner.play { animation: multPop 1.1s ease-out; }
+  .mult-num {
+    font-size: clamp(52px, 18vw, 100px);
+    font-weight: 800;
+    line-height: 1;
+    color: #ffd86b;
+    text-shadow: 0 0 30px rgba(255, 216, 107, 0.7), 0 4px 12px rgba(0,0,0,0.5);
+  }
+  .mult-label {
+    font-size: clamp(14px, 4.5vw, 22px);
+    font-weight: 700;
+    letter-spacing: 3px;
+    color: #ffe9a8;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    margin-top: 4px;
+  }
+  /* 10× runs hotter (orange) than 5× (gold) so the two tiers read apart. */
+  .mult-inner.tier10 .mult-num {
+    color: #ff9d3c;
+    text-shadow: 0 0 40px rgba(255, 157, 60, 0.85), 0 4px 12px rgba(0,0,0,0.5);
+  }
+  .mult-inner.tier10 .mult-label { color: #ffc48a; }
+  @keyframes multPop {
+    0%   { opacity: 0; transform: scale(0.6); }
+    18%  { opacity: 1; transform: scale(1.12); }
+    32%  { transform: scale(1.0); }
+    72%  { opacity: 1; }
+    100% { opacity: 0; transform: scale(1.04); }
+  }
   .title {
     font-size: clamp(32px, 8vw, 52px);
     font-weight: 800;
@@ -309,6 +361,10 @@
   .pu-badge.double { border-color: #ffb84d; color: #ffb84d; box-shadow: 0 0 12px rgba(255,184,77,0.4); }
   .pu-badge.magnet { border-color: #ff79c6; color: #ff79c6; box-shadow: 0 0 12px rgba(255,121,198,0.4); }
   .pu-badge.shock  { border-color: #6af0ff; color: #6af0ff; box-shadow: 0 0 14px rgba(106,240,255,0.55); }
+  /* v0.22.0 — Stellar Surplus (Master capstone) run-bonus indicator. Gold
+     to match the Star (✦) currency it belongs to. Persistent while active
+     (no pu-bar — it only ever grows during a run, never expires). */
+  .pu-badge.surplus { border-color: #ffd86b; color: #ffd86b; box-shadow: 0 0 12px rgba(255,216,107,0.4); }
   /* Expiring-soon burst — applied when <1.5s remains on a duration buff.
      Three quick flashes per 500ms cycle ("tap-tap-tap ... tap-tap-tap") so
      the warning reads as urgent rather than metronomic. Opacity-only so
@@ -1222,7 +1278,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.21.1</div>
+    <div class="version-badge" id="versionBadge">v0.22.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1253,6 +1309,14 @@
        Shown for every run start AND retry; see runCountdown() in JS. -->
   <div id="countdownOverlay" class="countdown-overlay">
     <div class="countdown-number" id="countdownNumber">3</div>
+  </div>
+  <!-- Multiplier milestone popup (v0.22.0) — center-screen 5×/10× callout.
+       Non-interactive; see checkMultiplierMilestone() / showMultiplierPopup(). -->
+  <div id="multPopup" class="mult-popup" aria-hidden="true">
+    <div class="mult-inner" id="multInner">
+      <span class="mult-num" id="multNum">5×</span>
+      <span class="mult-label">MULTIPLIER</span>
+    </div>
   </div>
   <div class="hint" id="unlockHint"></div>
 
@@ -1308,7 +1372,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.21.1';
+  const GAME_VERSION = 'v0.22.0';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -1565,6 +1629,28 @@
         if (!settings.sfxOn || !ctx) return;
         tone({ freq: 1320, dur: 0.2, type: 'sine', gain: 0.2 });
         tone({ freq: 1760, dur: 0.15, type: 'sine', gain: 0.15, delay: 0.08 });
+      },
+      // v0.22.0 — Phoenix Cell rebirth (Master capstone). Warm rising
+      // "re-ignition": low ember swell climbing into a bright chord —
+      // deliberately the OPPOSITE arc of death()'s descending boom, so a
+      // player's ears immediately read "saved", not "killed".
+      phoenix() {
+        if (!settings.sfxOn || !ctx) return;
+        tone({ freq: 220, freqEnd: 880, dur: 0.4, type: 'sawtooth', gain: 0.2 });
+        tone({ freq: 440, freqEnd: 1760, dur: 0.35, type: 'triangle', gain: 0.15, delay: 0.08 });
+        tone({ freq: 2637, dur: 0.2, type: 'sine', gain: 0.1, delay: 0.3 });
+        noise({ dur: 0.35, gain: 0.15, filterFreq: 1200, sweepTo: 4000, filterQ: 1.5 });
+      },
+      // v0.22.0 — combined-multiplier milestone fanfare (5× / 10×). A bright
+      // ascending arpeggio; the 10× tier starts higher and adds a top
+      // octave so the bigger streak sounds bigger.
+      multiplier(level) {
+        if (!settings.sfxOn || !ctx) return;
+        const base = level >= 10 ? 660 : 523;
+        tone({ freq: base,        dur: 0.10, type: 'triangle', gain: 0.16 });
+        tone({ freq: base * 1.26, dur: 0.10, type: 'triangle', gain: 0.16, delay: 0.08 });
+        tone({ freq: base * 1.5,  dur: 0.16, type: 'sine',     gain: 0.14, delay: 0.16 });
+        if (level >= 10) tone({ freq: base * 2, dur: 0.18, type: 'sine', gain: 0.10, delay: 0.24 });
       },
       uiClick() {
         if (!settings.sfxOn || !ctx) return;
@@ -1874,6 +1960,8 @@
   const gameOverScreen = document.getElementById('gameOverScreen');
   const countdownOverlay = document.getElementById('countdownOverlay');
   const countdownNumberEl = document.getElementById('countdownNumber');
+  const multInnerEl = document.getElementById('multInner'); // v0.22.0 — multiplier popup
+  const multNumEl = document.getElementById('multNum');
   const startBtn = document.getElementById('startBtn');
   const restartBtn = document.getElementById('restartBtn');
   const quitBtn = document.getElementById('quitBtn');
@@ -2661,6 +2749,65 @@
         && getGuidanceTier() >= MAX_UPGRADE_TIER;
   }
 
+  // ======================================================================
+  // v0.22.0 — PHASE 4A: CAPSTONE MECHANICS (dormant until Phase 4B)
+  // ======================================================================
+  // Phoenix Cell + Stellar Surplus effects, wired but unreachable through
+  // normal play while MASTER_SHOP_AVAILABLE stays false — the exact same
+  // ship-dormant-then-expose pattern Full Autopilot used in v0.20.0.
+  // Testable now via localStorage (see claude.md playtest section).
+  // Full design contract: ngplus-design.md §4.
+
+  // === Stellar Surplus ===
+  // +5% score multiplier per 10 asteroid pairs passed this run, capped at
+  // +50% (100 pairs). Steps are derived from live pairsPassed, so there's
+  // no run-state to reset. Feeds addScore() as a third multiplicative
+  // factor. Score gains ONLY — wallet coins (runCoins) never route
+  // through addScore(), so the coin economy (and the Star meter it feeds
+  // in Phase 4B) stays uninflated by design.
+  const SURPLUS_STEP = 0.05;   // bonus per 10 pairs
+  const SURPLUS_CAP  = 0.50;   // hard ceiling (+50%)
+  function getSurplusMult() {
+    if (masterUpgrades.stellar_surplus !== true) return 1;
+    return 1 + Math.min(SURPLUS_CAP, Math.floor(pairsPassed / 10) * SURPLUS_STEP);
+  }
+
+  // === Phoenix Cell ===
+  // Once-per-run death save. Called at BOTH death sites (asteroid hit
+  // with 0 shields, floor contact) — returns true when the save fires so
+  // the caller skips gameOver(). Effects: survive at 1 shield (floor
+  // deaths keep existing shields — the floor kills regardless of shield
+  // count, so the save should never feel like it *cost* shields),
+  // standard Overcharged-Shields iFrame window, and an upward rebirth
+  // kick. The kick matters most for floor deaths: the floor check has no
+  // iFrame, so without it the very next frame would re-trigger death
+  // with Phoenix already spent.
+  function attemptPhoenixSave() {
+    if (masterUpgrades.phoenix_cell !== true) return false;
+    if (phoenixUsedThisRun) return false;
+    phoenixUsedThisRun = true;
+    shieldCharges = Math.max(shieldCharges, 1);
+    const iframeMs = getShieldIframeMs();
+    shieldIFrameUntil = performance.now() + iframeMs;
+    shieldPopEffect = 1;
+    rocket.vy = Math.min(rocket.vy, -4.5); // rebirth kick (launch is -2.5)
+    shake = Math.max(shake, 14);
+    // Orange/gold fire burst — reads "phoenix", distinct from the cyan
+    // shield pop so the player knows the capstone (not a charge) saved them.
+    addParticles(rocket.x, rocket.y, { n: 36, color: '#ff9d3c', speed: 4.5, life: 45, size: 3 });
+    addParticles(rocket.x, rocket.y, { n: 18, color: '#ffd86b', speed: 3, life: 38, size: 2 });
+    flashEl.style.transition = 'none';
+    flashEl.style.opacity = String(0.35 * Accessibility.flashScale());
+    requestAnimationFrame(() => {
+      flashEl.style.transition = 'opacity 0.3s ease-out';
+      flashEl.style.opacity = '0';
+    });
+    if (navigator.vibrate) navigator.vibrate([20, 40, 60]);
+    Audio.play.phoenix();
+    updateHud();
+    return true;
+  }
+
   let asteroids = [];
   let powerups = [];
   let coins = [];
@@ -2684,6 +2831,10 @@
   let shieldCharges = 0;
   let shieldIFrameUntil = 0;
   let shieldPopEffect = 0;
+  // v0.22.0 — Phoenix Cell once-per-run latch. Set by attemptPhoenixSave(),
+  // cleared in reset(). Lives with the shield state since Phoenix is
+  // functionally an emergency shield refill.
+  let phoenixUsedThisRun = false;
   // Duration powerups
   let focusTime = 0;               // Hyperfocus active time (ms)
   // v0.14.0 — peak duration for this activation. Used by the sweep animation
@@ -2781,6 +2932,8 @@
     shieldCharges = getStartingShields();
     shieldIFrameUntil = 0;
     shieldPopEffect = 0;
+    phoenixUsedThisRun = false; // v0.22.0 — re-arm Phoenix Cell each run
+    multMilestoneShown = 0;     // v0.22.0 — re-arm multiplier popups each run
     focusTime = 0;
     focusTimeMax = 0;
     doubleTime = 0;
@@ -4617,15 +4770,55 @@
   // Central score-addition gate. Applies ALL active multipliers to every
   // incoming point. The double-buff and shock-buff stack multiplicatively,
   // so a maxed 9× Multiplier upgrade + active Shock Shield = 18× score.
+  // v0.22.0 — Stellar Surplus joins as a third multiplicative factor
+  // (ngplus-design.md §4): up to +50% on long runs, so the theoretical
+  // peak is now 18× × 1.5 = 27×. Dormant until Phase 4B exposes purchase.
   // Returns the actual amount added (so popups can show the buffed number).
   function addScore(amount) {
-    const doubleMult = doubleTime > 0 ? getDoublePower() : 1;
-    const shockMult  = shockTime  > 0 ? SHOCK_MULT : 1;
-    const mult = doubleMult * shockMult;
-    const actual = amount * mult;
+    // Round: surplus steps (×1.05 … ×1.50) are the first non-integer
+    // multipliers in the game — without this, score (and popups) would
+    // show fractions. No-op for the integer double/shock mults.
+    const actual = Math.round(amount * getEffectiveMultiplier());
     score += actual;
     updateHud();
     return actual;
+  }
+
+  // v0.22.0 — the combined score multiplier in effect right now. Factored
+  // out of addScore() so the multiplier-milestone popup can read the exact
+  // same number the scoring pipeline uses (2× powerup × Shock × Surplus).
+  function getEffectiveMultiplier() {
+    const doubleMult = doubleTime > 0 ? getDoublePower() : 1;
+    const shockMult  = shockTime  > 0 ? SHOCK_MULT : 1;
+    return doubleMult * shockMult * getSurplusMult();
+  }
+
+  // v0.22.0 — center-screen callout when the combined multiplier crosses a
+  // milestone. The per-buff HUD badges are easy to miss mid-run, so a big
+  // "5×" / "10×" pop makes a hot streak obvious. Benefits ALL players, not
+  // just capstone owners — an upgraded 2× powerup alone reaches 5×.
+  const MULT_MILESTONES = [5, 10];  // must stay ascending
+  // Highest milestone currently "announced". Rises as buffs stack, falls
+  // back when they expire — so the next stack re-announces. Reset per run.
+  let multMilestoneShown = 0;
+  function checkMultiplierMilestone() {
+    const mult = getEffectiveMultiplier();
+    // Highest threshold the current multiplier qualifies for (0 if none).
+    let reached = 0;
+    for (const m of MULT_MILESTONES) { if (mult >= m) reached = m; }
+    // Only pop on an upward crossing into a NEW tier — never every frame.
+    if (reached > multMilestoneShown) showMultiplierPopup(reached);
+    multMilestoneShown = reached;
+  }
+  function showMultiplierPopup(level) {
+    multNumEl.textContent = level + '×';
+    // Restart the CSS animation: drop the classes, force reflow, re-add.
+    multInnerEl.classList.remove('play', 'tier10');
+    void multInnerEl.offsetWidth;
+    if (level >= 10) multInnerEl.classList.add('tier10');
+    multInnerEl.classList.add('play');
+    Audio.play.multiplier(level);
+    if (navigator.vibrate) navigator.vibrate(level >= 10 ? [15, 30, 15] : 15);
   }
 
   function updateHud() {
@@ -4962,7 +5155,10 @@
             // trigger Shock/Nova effects as appropriate for purchased tier.
             triggerReactiveBlast();
             updateHud();
-          } else {
+          } else if (!attemptPhoenixSave()) {
+            // v0.22.0 — Phoenix Cell gets one shot at intercepting a fatal
+            // hit before gameOver(). Returns false when unowned/spent, so
+            // the death path is unchanged for everyone else.
             gameOver();
           }
           break;
@@ -4977,7 +5173,10 @@
     }
     if (rocket.y + rocket.r > BASE_H) {
       rocket.y = BASE_H - rocket.r;
-      if (state === STATE.PLAY) gameOver();
+      // v0.22.0 — Phoenix Cell also intercepts floor deaths (design says
+      // "any death source"). Its upward rebirth kick clears the rocket off
+      // the floor so this check doesn't immediately re-fire next frame.
+      if (state === STATE.PLAY && !attemptPhoenixSave()) gameOver();
     }
 
     // === Powerup pickups ===
@@ -5087,6 +5286,10 @@
     if (magnetTime > 0) magnetTime = Math.max(0, magnetTime - dt * (1000 / 60));
     if (shockTime  > 0) shockTime  = Math.max(0, shockTime  - dt * (1000 / 60));
 
+    // v0.22.0 — after buff timers settle for the frame, see whether the
+    // combined multiplier just crossed 5×/10× and pop a callout if so.
+    checkMultiplierMilestone();
+
     // Blast rings expand from 0 → maxR over their short life. Updated on
     // real dt (not sdt) so slowmo doesn't slow the reactive shield visual —
     // you want the bang to be instant regardless of time scale.
@@ -5137,6 +5340,14 @@
       }
       if (maxShields > 0) {
         html += `<div class="pu-badge shield shield-slots">🛡 ${pips}</div>`;
+      }
+      // v0.22.0 — Stellar Surplus run bonus. Appears once the first +5%
+      // step banks (10 pairs) and only ever grows, so no duration bar.
+      // getSurplusMult() returns 1 when the capstone is unowned, keeping
+      // this invisible for everyone until Phase 4B opens the shop.
+      const surplusPct = Math.round((getSurplusMult() - 1) * 100);
+      if (surplusPct > 0) {
+        html += `<div class="pu-badge surplus">✦ +${surplusPct}%</div>`;
       }
     }
     // Compact builder for any duration-based powerup badge.
