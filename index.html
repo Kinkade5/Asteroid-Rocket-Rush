@@ -82,6 +82,38 @@
     opacity: 0.4;
     cursor: default;
   }
+  /* === Pre-launch countdown (v0.21.1) === */
+  /* pointer-events: none always — a player holding thrust through the
+     countdown must keep reaching the canvas underneath uninterrupted. */
+  .countdown-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    z-index: 5;
+  }
+  .countdown-overlay.active { opacity: 1; }
+  .countdown-number {
+    font-size: clamp(64px, 22vw, 120px);
+    font-weight: 800;
+    color: #fff;
+    text-shadow: 0 0 40px rgba(255, 216, 107, 0.6), 0 4px 12px rgba(0,0,0,0.5);
+    animation: countdownPop 0.3s ease-out;
+  }
+  /* "GO!" gets the same pop but a cyan glow to distinguish it from the digits */
+  .countdown-number.go {
+    color: #6af0ff;
+    text-shadow: 0 0 40px rgba(106, 240, 255, 0.7), 0 4px 12px rgba(0,0,0,0.5);
+  }
+  @keyframes countdownPop {
+    0%   { transform: scale(0.5); opacity: 0; }
+    60%  { transform: scale(1.15); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
   .title {
     font-size: clamp(32px, 8vw, 52px);
     font-weight: 800;
@@ -1190,7 +1222,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.21.0</div>
+    <div class="version-badge" id="versionBadge">v0.21.1</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1216,8 +1248,13 @@
       <button class="btn btn-secondary" id="quitBtn">QUIT</button>
       <button class="btn" id="restartBtn">RETRY 🔁</button>
     </div>
-    <div class="hint" id="unlockHint"></div>
   </div>
+  <!-- Pre-launch countdown (v0.21.1) — sits above the canvas, non-interactive.
+       Shown for every run start AND retry; see runCountdown() in JS. -->
+  <div id="countdownOverlay" class="countdown-overlay">
+    <div class="countdown-number" id="countdownNumber">3</div>
+  </div>
+  <div class="hint" id="unlockHint"></div>
 
   <!-- Shop overlay (opened from SHOP button on start screen) -->
   <div id="shopScreen" class="overlay hidden gone">
@@ -1271,7 +1308,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.21.0';
+  const GAME_VERSION = 'v0.21.1';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -1517,6 +1554,17 @@
         // Whoosh-up for game start
         tone({ freq: 120, freqEnd: 480, dur: 0.35, type: 'sawtooth', gain: 0.25 });
         noise({ dur: 0.3, gain: 0.2, filterFreq: 600, sweepTo: 2400, filterQ: 1.5 });
+      },
+      // v0.21.1 — pre-launch countdown ticks. Neutral blip for "3-2-1", a
+      // brighter two-note rise for "GO!" so the release beat is distinct.
+      countdownTick() {
+        if (!settings.sfxOn || !ctx) return;
+        tone({ freq: 880, dur: 0.1, type: 'sine', gain: 0.15 });
+      },
+      countdownGo() {
+        if (!settings.sfxOn || !ctx) return;
+        tone({ freq: 1320, dur: 0.2, type: 'sine', gain: 0.2 });
+        tone({ freq: 1760, dur: 0.15, type: 'sine', gain: 0.15, delay: 0.08 });
       },
       uiClick() {
         if (!settings.sfxOn || !ctx) return;
@@ -1824,6 +1872,8 @@
   const flashEl = document.getElementById('flash');
   const startScreen = document.getElementById('startScreen');
   const gameOverScreen = document.getElementById('gameOverScreen');
+  const countdownOverlay = document.getElementById('countdownOverlay');
+  const countdownNumberEl = document.getElementById('countdownNumber');
   const startBtn = document.getElementById('startBtn');
   const restartBtn = document.getElementById('restartBtn');
   const quitBtn = document.getElementById('quitBtn');
@@ -1889,7 +1939,11 @@
   window.addEventListener('resize', resize);
 
   // --- Game state ---
-  const STATE = { MENU: 0, PLAY: 1, DEAD: 2 };
+  // v0.21.1 — COUNTDOWN added: a distinct pre-PLAY state that startGame()
+  // holds during the "3-2-1-GO" beat. It behaves like MENU for physics/world
+  // gating (see loop()'s else-branch and worldActive checks) — the rocket
+  // idle-floats and the backdrop drifts gently, exactly like before a run.
+  const STATE = { MENU: 0, PLAY: 1, DEAD: 2, COUNTDOWN: 3 };
   let state = STATE.MENU;
 
   // Best scores are now tracked per-tier (see bestScoreByTier /
@@ -3783,9 +3837,56 @@
     refreshWalletUI();
   });
 
+  // === Pre-launch countdown (v0.21.1) ===
+  // Fires on every run start AND every retry — both funnel through
+  // startGame() below, so one implementation covers all game modes.
+  // Kept snappy since this is an arcade game with frequent retries; tune
+  // these two knobs if the beat feels slow or rushed.
+  const COUNTDOWN_TICK_MS = 600;  // ms each of "3","2","1" is shown
+  const COUNTDOWN_GO_MS   = 350;  // ms "GO!" flashes before gameplay begins
+
+  function runCountdown(onComplete) {
+    const steps = ['3', '2', '1'];
+    let i = 0;
+    function showStep(text, isGo) {
+      countdownNumberEl.textContent = text;
+      countdownNumberEl.classList.toggle('go', !!isGo);
+      // Restart the CSS pop animation on every tick — same element, so a
+      // plain class/text swap wouldn't retrigger it without this reflow hack.
+      countdownNumberEl.style.animation = 'none';
+      void countdownNumberEl.offsetWidth;
+      countdownNumberEl.style.animation = '';
+    }
+    countdownOverlay.classList.add('active');
+    showStep(steps[0], false);
+    Audio.play.countdownTick();
+    function tick() {
+      i++;
+      if (i < steps.length) {
+        showStep(steps[i], false);
+        Audio.play.countdownTick();
+        setTimeout(tick, COUNTDOWN_TICK_MS);
+      } else {
+        showStep('GO!', true);
+        Audio.play.countdownGo();
+        setTimeout(() => {
+          countdownOverlay.classList.remove('active');
+          onComplete();
+        }, COUNTDOWN_GO_MS);
+      }
+    }
+    setTimeout(tick, COUNTDOWN_TICK_MS);
+  }
+
   function startGame() {
     reset();
-    state = STATE.PLAY;
+    // Hold in COUNTDOWN (not PLAY) until the "3-2-1-GO" beat finishes.
+    // Physics/spawning stay off — see loop()'s state gate — while the
+    // rocket idle-floats and backdrop drifts exactly like the menu.
+    // Thrust input is still captured (handlePointerDown sets `thrusting`
+    // in any state); holding through the countdown means thrust is
+    // already live the instant PLAY begins.
+    state = STATE.COUNTDOWN;
     hideOverlay(startScreen);
     hideOverlay(gameOverScreen);
     // Hide the unlock toast in case it was still showing from the last run
@@ -3800,32 +3901,36 @@
     tierBadge.classList.remove('hud-hidden');
     updateHud();
 
-    // === LAUNCH BURST ===
-    // No delay before gameplay — the "oomph" runs concurrently with the first
-    // moments of play: ignition flash, screen shake, thrust particles, haptic.
-    // Feels punchy without making the player wait.
-    shake = 8;
-    flashEl.style.transition = 'none';
-    flashEl.style.opacity = String(0.35 * Accessibility.flashScale());
-    // Next frame: fade it out smoothly
-    requestAnimationFrame(() => {
-      flashEl.style.transition = 'opacity 0.25s ease-out';
-      flashEl.style.opacity = '0';
+    runCountdown(() => {
+      state = STATE.PLAY;
+
+      // === LAUNCH BURST ===
+      // Runs concurrently with the first moments of play: ignition flash,
+      // screen shake, thrust particles, haptic. Feels punchy without
+      // stacking a second wait on top of the countdown that just played.
+      shake = 8;
+      flashEl.style.transition = 'none';
+      flashEl.style.opacity = String(0.35 * Accessibility.flashScale());
+      // Next frame: fade it out smoothly
+      requestAnimationFrame(() => {
+        flashEl.style.transition = 'opacity 0.25s ease-out';
+        flashEl.style.opacity = '0';
+      });
+      // Big ignition plume behind the rocket
+      addParticles(rocket.x - 14, rocket.y, {
+        n: 22, color: '#ffd86b', speed: 3.2, life: 28, vx: -3, size: 2,
+      });
+      addParticles(rocket.x - 14, rocket.y, {
+        n: 14, color: '#ff7e3c', speed: 2.5, life: 26, vx: -2.5, size: 2.5,
+      });
+      // Small upward kick so the launch feels like a LAUNCH (not a sag).
+      // Previously tried and reverted because of a separate bug that made thrust
+      // feel delayed on touch; with that bug fixed (click-start now engages
+      // thrust for held fingers), the initial boost feels right again.
+      rocket.vy = -2.5;
+      if (navigator.vibrate) navigator.vibrate(25);
+      Audio.play.launch();
     });
-    // Big ignition plume behind the rocket
-    addParticles(rocket.x - 14, rocket.y, {
-      n: 22, color: '#ffd86b', speed: 3.2, life: 28, vx: -3, size: 2,
-    });
-    addParticles(rocket.x - 14, rocket.y, {
-      n: 14, color: '#ff7e3c', speed: 2.5, life: 26, vx: -2.5, size: 2.5,
-    });
-    // Small upward kick so the launch feels like a LAUNCH (not a sag).
-    // Previously tried and reverted because of a separate bug that made thrust
-    // feel delayed on touch; with that bug fixed (click-start now engages
-    // thrust for held fingers), the initial boost feels right again.
-    rocket.vy = -2.5;
-    if (navigator.vibrate) navigator.vibrate(25);
-    Audio.play.launch();
   }
 
   // Go back to main menu (from game over via QUIT button)
@@ -5020,7 +5125,10 @@
     // upgrade); filled ones = available charges. With max at 6 (Fortress
     // Frame on Beginner) the badge gets crowded but still readable.
     let html = '';
-    if (state === STATE.PLAY || state === STATE.DEAD) {
+    // v0.21.1 — include COUNTDOWN so shield pips are already visible during
+    // the pre-launch beat, matching the HUD (which startGame() reveals before
+    // the countdown runs) instead of popping in only once PLAY begins.
+    if (state === STATE.PLAY || state === STATE.DEAD || state === STATE.COUNTDOWN) {
       const maxShields = getMaxShields();
       let pips = '';
       for (let i = 0; i < maxShields; i++) {
