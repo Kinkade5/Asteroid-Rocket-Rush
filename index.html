@@ -963,6 +963,152 @@
     color: #c879ff;
     opacity: 0.9;
   }
+  /* === v0.24.0 — Global leaderboard === */
+  /* Tier selector: four chips, one per difficulty. Active chip tints to the
+     tier's own color (set inline via --tier-color from the JS builder). */
+  .lb-tiers {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    width: 92%;
+    max-width: 380px;
+    margin-bottom: 14px;
+  }
+  .lb-tier {
+    padding: 8px 4px;
+    background: rgba(15, 20, 45, 0.6);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    color: #9aa3d6;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .lb-tier:active { transform: scale(0.96); }
+  .lb-tier.active {
+    background: color-mix(in srgb, var(--tier-color) 18%, transparent);
+    border-color: var(--tier-color);
+    color: var(--tier-color);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--tier-color) 30%, transparent);
+  }
+  /* Column header + rows share the same grid template so columns align. */
+  .lb-head, .lb-row {
+    display: grid;
+    grid-template-columns: 30px 1fr 74px 62px;
+    gap: 8px;
+    align-items: center;
+    width: 92%;
+    max-width: 380px;
+  }
+  .lb-head {
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    color: rgba(154, 163, 214, 0.7);
+    font-weight: 700;
+    padding: 0 12px 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .lb-col-points, .lb-col-rounds { text-align: right; }
+  .lb-list {
+    width: 92%;
+    max-width: 380px;
+    /* Scroll the list itself so the header + close button stay put on long
+       boards. Height leaves room for the tiers, header, and CLOSE button. */
+    max-height: 46vh;
+    overflow-y: auto;
+    margin-top: 6px;
+  }
+  .lb-row {
+    padding: 9px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+  }
+  .lb-row:nth-child(odd) { background: rgba(15, 20, 45, 0.4); }
+  /* The signed-in player's own rows glow cyan so they can find themselves. */
+  .lb-row.me {
+    background: rgba(106, 240, 255, 0.12);
+    box-shadow: inset 0 0 0 1px rgba(106, 240, 255, 0.35);
+  }
+  .lb-rank { font-weight: 800; color: #c9d0f2; font-variant-numeric: tabular-nums; }
+  /* Top 3 get medal-tint ranks. */
+  .lb-row:nth-child(1) .lb-rank { color: #ffd86b; }
+  .lb-row:nth-child(2) .lb-rank { color: #cfd6e6; }
+  .lb-row:nth-child(3) .lb-rank { color: #e0a071; }
+  .lb-name {
+    font-weight: 700;
+    color: #fff;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .lb-points, .lb-rounds {
+    text-align: right;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+  }
+  .lb-points { color: #ffd86b; }
+  .lb-rounds { color: #6af0ff; }
+  /* Loading / error / empty message (also used mid-list). */
+  .lb-status {
+    text-align: center;
+    color: #9aa3d6;
+    font-size: 13px;
+    padding: 28px 12px;
+    line-height: 1.5;
+  }
+  .lb-status .lb-retry {
+    display: inline-block;
+    margin-top: 10px;
+    color: #6af0ff;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  /* === Game-over leaderboard result === */
+  .lb-result {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .lb-result-rank {
+    font-size: 15px;
+    font-weight: 800;
+    color: #ffd86b;
+    letter-spacing: 1px;
+    text-shadow: 0 0 12px rgba(255, 216, 107, 0.4);
+  }
+  .lb-result-entry {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .lb-name-input {
+    background: rgba(15, 20, 45, 0.8);
+    border: 1.5px solid rgba(106, 240, 255, 0.4);
+    border-radius: 8px;
+    color: #fff;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-align: center;
+    text-transform: uppercase;
+    padding: 8px 10px;
+    width: 130px;
+    outline: none;
+  }
+  .lb-name-input:focus { border-color: #6af0ff; }
+  .lb-name-input::placeholder { color: #5a6280; letter-spacing: 1px; }
+  .lb-submit-btn {
+    padding: 8px 16px !important;
+    font-size: 13px !important;
+    margin: 0 !important;
+  }
   /* === Difficulty selector on start menu === */
   .difficulty-label {
     font-size: 10px;
@@ -1339,6 +1485,8 @@
     <div class="difficulty-row" id="difficultyRow"></div>
     <button class="btn" id="startBtn">LAUNCH 🚀</button>
     <button class="btn btn-secondary" id="shopBtn" style="margin-top: 14px">SHOP 🛒</button>
+    <!-- v0.24.0 — global leaderboard entry point. Opens the leaderboard overlay. -->
+    <button class="btn btn-secondary" id="leaderboardBtn" style="margin-top: 14px">LEADERBOARD 🏆</button>
     <!-- PHASE 2 — vague progress scoreboard toward undisclosed (NG+) unlock.
          Non-interactive. Updates on page load and after each run. -->
     <div class="scoreboard-tile" id="scoreboardTile">
@@ -1349,7 +1497,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.23.0</div>
+    <div class="version-badge" id="versionBadge">v0.24.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1375,6 +1523,17 @@
          unless the run actually earned ✦, so it never clutters normal runs. -->
     <div class="coins-earned stars-earned" id="starsEarnedWrap" style="display:none">
       <span class="coin-icon star-icon">✦</span> <span id="starsEarnedText">+0 ✦</span>
+    </div>
+    <!-- v0.24.0 — leaderboard result. On a personal-best run: shows a name
+         input to join (first time) or the earned rank (once a name is set).
+         Hidden on non-PB runs. See handleLeaderboardOnGameOver(). -->
+    <div class="lb-result" id="lbResult" style="display:none">
+      <div class="lb-result-rank" id="lbResultRank" style="display:none"></div>
+      <div class="lb-result-entry" id="lbResultEntry" style="display:none">
+        <input type="text" id="lbNameInput" class="lb-name-input" maxlength="12"
+               placeholder="ENTER NAME" autocomplete="off" spellcheck="false" aria-label="Leaderboard name">
+        <button class="btn lb-submit-btn" id="lbSubmitBtn">SUBMIT 🏆</button>
+      </div>
     </div>
     <div class="btn-row">
       <button class="btn btn-secondary" id="quitBtn">QUIT</button>
@@ -1418,6 +1577,27 @@
     <button class="btn btn-secondary" id="shopCloseBtn" style="margin-top: 16px">CLOSE</button>
   </div>
 
+  <!-- Leaderboard overlay (v0.24.0) — global per-difficulty Top 100.
+       Tier selector + list (RANK · NAME · POINTS · ROUNDS). Data comes from
+       the Netlify leaderboard function; fetch failures degrade gracefully. -->
+  <div id="leaderboardScreen" class="overlay hidden gone">
+    <div class="shop-header">
+      <div class="shop-title">LEADERBOARD 🏆</div>
+    </div>
+    <!-- Per-tier selector — same 4 tiers as difficulty, always all shown. -->
+    <div class="lb-tiers" id="lbTiers"></div>
+    <!-- Column headers -->
+    <div class="lb-head">
+      <span class="lb-col-rank">#</span>
+      <span class="lb-col-name">NAME</span>
+      <span class="lb-col-points">POINTS</span>
+      <span class="lb-col-rounds">ROUNDS</span>
+    </div>
+    <!-- Rows / status messages render here -->
+    <div class="lb-list" id="lbList"></div>
+    <button class="btn btn-secondary" id="leaderboardCloseBtn" style="margin-top: 16px">CLOSE</button>
+  </div>
+
   <!-- Settings overlay (opened from gear on start screen) -->
   <div id="settingsScreen" class="overlay hidden gone">
     <div class="settings-panel">
@@ -1450,7 +1630,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.23.0';
+  const GAME_VERSION = 'v0.24.0';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -2091,6 +2271,17 @@
   const scoreboardLabelEl = document.querySelector('.scoreboard-label');
   const scoreboardTeaseEl = document.querySelector('.scoreboard-tease');
   const scoreboardLockEl = document.querySelector('.scoreboard-lock');
+  // v0.24.0 — leaderboard UI
+  const leaderboardBtn = document.getElementById('leaderboardBtn');
+  const leaderboardScreen = document.getElementById('leaderboardScreen');
+  const leaderboardCloseBtn = document.getElementById('leaderboardCloseBtn');
+  const lbTiersEl = document.getElementById('lbTiers');
+  const lbListEl = document.getElementById('lbList');
+  const lbResultEl = document.getElementById('lbResult');
+  const lbResultRankEl = document.getElementById('lbResultRank');
+  const lbResultEntryEl = document.getElementById('lbResultEntry');
+  const lbNameInput = document.getElementById('lbNameInput');
+  const lbSubmitBtn = document.getElementById('lbSubmitBtn');
   // Difficulty selector + tier indicators
   const difficultyRow = document.getElementById('difficultyRow');
   const tierBadge = document.getElementById('tierBadge');
@@ -4249,6 +4440,193 @@
     refreshScoreboardUI(); // v0.23.0 — Star meter reflects ✦ spent in the shop
   });
 
+  // ======================================================================
+  // v0.24.0 — GLOBAL LEADERBOARD (client)
+  // ======================================================================
+  // Talks to the Netlify function at LEADERBOARD_API. Everything here fails
+  // soft: no network / function down → the game is unaffected, the board
+  // just shows a "couldn't load" message. Design: leaderboard-design.md.
+  const LEADERBOARD_API = '/.netlify/functions/leaderboard';
+
+  // Player's chosen leaderboard name — set once (arcade style), reused after.
+  let playerName = localStorage.getItem('rocketRushPlayerName') || '';
+  function savePlayerName(name) {
+    playerName = name;
+    try { localStorage.setItem('rocketRushPlayerName', name); } catch (_) {}
+  }
+
+  // Which tier the leaderboard overlay is currently showing. Defaults to the
+  // tier the player last selected on the menu so it feels continuous.
+  let lbCurrentTier = currentDifficultyId;
+
+  // GET the board for a tier. Returns entries array, or throws on failure.
+  async function fetchLeaderboard(tier) {
+    const res = await fetch(`${LEADERBOARD_API}?tier=${encodeURIComponent(tier)}`, {
+      method: 'GET', headers: { 'accept': 'application/json' },
+    });
+    if (!res.ok) throw new Error('fetch failed: ' + res.status);
+    const data = await res.json();
+    return Array.isArray(data.entries) ? data.entries : [];
+  }
+
+  // POST a score. Returns { rank, entries } on success, or null on any
+  // failure (network, validation rejection, etc.) — callers treat null as
+  // "couldn't submit" and never block the game on it.
+  async function submitScore(tier, name, score, asteroids) {
+    try {
+      const res = await fetch(LEADERBOARD_API, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ tier, name, score, asteroids }),
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // Build the four tier-selector chips in the overlay.
+  function renderLbTiers() {
+    lbTiersEl.innerHTML = DIFFICULTY_ORDER.map(id => {
+      const d = DIFFICULTIES[id];
+      const active = id === lbCurrentTier ? ' active' : '';
+      return `<button class="lb-tier${active}" data-lbtier="${id}" style="--tier-color:${d.color}">${d.name.toUpperCase()}</button>`;
+    }).join('');
+    lbTiersEl.querySelectorAll('.lb-tier').forEach(btn => {
+      btn.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const id = btn.getAttribute('data-lbtier');
+        if (id === lbCurrentTier) return;
+        lbCurrentTier = id;
+        Audio.play.uiClick();
+        renderLbTiers();
+        loadLbList();
+      });
+    });
+  }
+
+  // Fetch + render the current tier's rows (with loading / error / empty
+  // states). Highlights the player's own rows by name.
+  async function loadLbList() {
+    lbListEl.innerHTML = '<div class="lb-status">Loading…</div>';
+    let entries;
+    try {
+      entries = await fetchLeaderboard(lbCurrentTier);
+    } catch (_) {
+      lbListEl.innerHTML =
+        '<div class="lb-status">Couldn\'t load the leaderboard.<br>' +
+        '<span class="lb-retry" id="lbRetry">Tap to retry</span></div>';
+      const retry = document.getElementById('lbRetry');
+      if (retry) retry.addEventListener('pointerdown', (e) => {
+        e.stopPropagation(); e.preventDefault(); loadLbList();
+      });
+      return;
+    }
+    if (!entries.length) {
+      lbListEl.innerHTML = '<div class="lb-status">No scores yet — be the first! 🚀</div>';
+      return;
+    }
+    lbListEl.innerHTML = entries.map((en, i) => {
+      const me = playerName && en.name === playerName ? ' me' : '';
+      return `<div class="lb-row${me}">
+        <span class="lb-rank">${i + 1}</span>
+        <span class="lb-name">${escapeHtml(en.name)}</span>
+        <span class="lb-points">${(en.score || 0).toLocaleString()}</span>
+        <span class="lb-rounds">${(en.asteroids || 0).toLocaleString()}</span>
+      </div>`;
+    }).join('');
+  }
+
+  // Minimal HTML escaping for user-supplied names in the row markup.
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function openLeaderboard() {
+    lbCurrentTier = currentDifficultyId; // open on the tier you're playing
+    renderLbTiers();
+    loadLbList();
+    hideOverlay(startScreen);
+    showOverlay(leaderboardScreen);
+  }
+
+  leaderboardBtn.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    ensureAudio();
+    Audio.play.uiClick();
+    openLeaderboard();
+  });
+  leaderboardCloseBtn.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    Audio.play.uiBack();
+    hideOverlay(leaderboardScreen);
+    showOverlay(startScreen);
+  });
+
+  // === Game-over integration ===
+  // Called from gameOver() only on a personal-best run (scoreIsNewBest).
+  // If a name is set, submits silently and shows the earned rank. If not,
+  // shows an inline name field so the player can join the board.
+  function handleLeaderboardOnGameOver(tier, score, asteroids) {
+    lbResultRankEl.style.display = 'none';
+    lbResultEntryEl.style.display = 'none';
+    lbResultEl.style.display = 'none';
+    if (score <= 0) return;
+
+    // Stash this run's stats on the submit button so a delayed inline submit
+    // (player typing their name) still posts the correct run.
+    lbSubmitBtn.dataset.tier = tier;
+    lbSubmitBtn.dataset.score = String(score);
+    lbSubmitBtn.dataset.asteroids = String(asteroids);
+
+    lbResultEl.style.display = '';
+    if (playerName) {
+      // Submit in the background; reveal the rank when it lands.
+      lbResultRankEl.style.display = '';
+      lbResultRankEl.textContent = '🏆 Submitting…';
+      submitScore(tier, playerName, score, asteroids).then(result => {
+        if (!result) { lbResultRankEl.textContent = '🏆 Couldn\'t reach leaderboard'; return; }
+        lbResultRankEl.textContent = (result.rank != null)
+          ? `🏆 Rank #${result.rank} on ${DIFFICULTIES[tier].name}!`
+          : '🏆 Score submitted';
+      });
+    } else {
+      // First submission — collect a name inline.
+      lbResultEntryEl.style.display = '';
+      lbNameInput.value = '';
+    }
+  }
+
+  // Inline "SUBMIT 🏆" on the game-over screen (first-time name entry).
+  // Reads the run's tier/score/asteroids off the button's data attributes
+  // (set by gameOver) so a delayed submit still uses the right run's stats.
+  lbSubmitBtn.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const name = lbNameInput.value.trim();
+    if (!name) { lbNameInput.focus(); return; }
+    savePlayerName(name);
+    const tier = lbSubmitBtn.dataset.tier;
+    const score = parseInt(lbSubmitBtn.dataset.score) || 0;
+    const asteroids = parseInt(lbSubmitBtn.dataset.asteroids) || 0;
+    lbResultEntryEl.style.display = 'none';
+    lbResultRankEl.style.display = '';
+    lbResultRankEl.textContent = '🏆 Submitting…';
+    Audio.play.uiClick();
+    submitScore(tier, name, score, asteroids).then(result => {
+      if (!result) { lbResultRankEl.textContent = '🏆 Couldn\'t reach leaderboard'; return; }
+      lbResultRankEl.textContent = (result.rank != null)
+        ? `🏆 Rank #${result.rank} on ${DIFFICULTIES[tier].name}!`
+        : '🏆 Score submitted';
+    });
+  });
+
   // === Pre-launch countdown (v0.21.1) ===
   // Fires on every run start AND every retry — both funnel through
   // startGame() below, so one implementation covers all game modes.
@@ -4481,6 +4859,15 @@
 
     refreshWalletUI();
     refreshScoreboardUI();
+
+    // v0.24.0 — leaderboard: only personal-best runs (per tier) go to the
+    // global board, which keeps submissions sparse and each player's board
+    // presence tied to their PB progression. Non-PB runs skip it entirely.
+    if (scoreIsNewBest) {
+      handleLeaderboardOnGameOver(tierId, score, pairsPassed);
+    } else {
+      lbResultEl.style.display = 'none';
+    }
 
     // Populate game-over UI
     refreshGameoverTier();
@@ -5823,6 +6210,7 @@
   setButtonsEnabled(gameOverScreen, false);
   setButtonsEnabled(shopScreen, false);
   setButtonsEnabled(settingsScreen, false);
+  setButtonsEnabled(leaderboardScreen, false); // v0.24.0
   // v0.23.0 — retroactive NG+ grant on load. A player already past 100k
   // lifetime when 4B ships (the bar's been sitting capped at 100%) gets
   // their owed meter stars immediately, and the reveal toast fires once so

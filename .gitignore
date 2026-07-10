@@ -1,0 +1,6 @@
+# Node deps for the Netlify leaderboard function (installed by Netlify at
+# deploy time, and locally if you run `npm install` / `netlify dev`).
+node_modules/
+
+# Netlify CLI local state
+.netlify/
