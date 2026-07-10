@@ -28,18 +28,83 @@ const MAX_ASTEROIDS = 100000;         // nobody threads 100k gaps legitimately
 const MAX_SCORE_PER_ASTEROID = 8000;  // ratio gate (+ slack below)
 const BASE_SCORE_SLACK = 10000;       // allow small scores at 0-few asteroids
 
-function sanitizeName(raw) {
-  if (typeof raw !== 'string') return 'AAA';
-  // Keep printable characters only (drop ASCII control chars + DEL), then
-  // trim and cap to 12. A char-code filter avoids embedding control-char
-  // literals in this source file.
-  let cleaned = '';
-  for (const ch of raw) {
-    const code = ch.codePointAt(0);
-    if (code >= 32 && code !== 127) cleaned += ch;
+// === v0.24.0 — name rules (arcade style) ===
+// Charset: A-Z 0-9 space hyphen, uppercase enforced, 3-12 chars. The strict
+// allowlist is most of the profanity defense — no emoji, no Unicode
+// homoglyphs, no punctuation tricks. On top of that, a blocklist is checked
+// against NORMALIZED forms of the name (leetspeak digits mapped to letters,
+// separators stripped, repeated letters collapsed) so "F U C K", "FUUUCK",
+// and "FVCK-1" style evasions all still match.
+//
+// Philosophy: reject with a clear error (client shows "try a different
+// name") rather than silently storing AAA — transparent for legit players
+// hit by a rare false positive. The blocklist deliberately sticks to
+// unambiguous strong terms; short Scunthorpe-prone words (ASS in PASS,
+// SPIC in SPICY, ANAL in CANAL...) are matched EXACTLY instead of as
+// substrings so ordinary names don't get eaten.
+const NAME_MIN = 3;
+const NAME_MAX = 12;
+const NAME_CHARS = /^[A-Z0-9 -]+$/;
+
+// Leetspeak digit map used only for matching (stored name keeps its digits).
+const LEET = { '0': 'O', '1': 'I', '2': 'Z', '3': 'E', '4': 'A', '5': 'S', '6': 'G', '7': 'T', '8': 'B', '9': 'G' };
+
+// Substring terms — unambiguous enough that ANY occurrence is rejected.
+const BANNED_SUBSTRINGS = [
+  'FUCK', 'SHIT', 'BITCH', 'CUNT', 'COCK', 'DICK', 'PENIS', 'PUSSY',
+  'WHORE', 'SLUT', 'TWAT', 'WANK', 'PRICK', 'BOLLOCK', 'PISS', 'JIZZ',
+  'SEMEN', 'DILDO', 'MILF', 'BLOWJOB', 'HANDJOB', 'HENTAI', 'PORN',
+  'ASSHOLE', 'BASTARD', 'RETARD', 'RAPIST', 'MOLEST', 'PEDO',
+  'NIGGER', 'NIGGA', 'FAGGOT', 'TRANNY', 'DYKE', 'KIKE', 'CHINK',
+  'WETBACK', 'BEANER', 'GOOK', 'NEGRO', 'SWASTIKA', 'HITLER', 'NAZI',
+];
+// Exact-match terms — too collision-prone as substrings (Scunthorpe words).
+const BANNED_EXACT = [
+  'ASS', 'SEX', 'CUM', 'TIT', 'TITS', 'FAG', 'FAGS', 'KKK', 'HOE',
+  'RAPE', 'ANAL', 'ANUS', 'ARSE', 'SPIC', 'COON',
+];
+
+// Collapse runs of the same letter (FUUUCK -> FUCK). Matching-only.
+function collapseRepeats(s) {
+  let out = '';
+  for (const ch of s) { if (ch !== out[out.length - 1]) out += ch; }
+  return out;
+}
+
+// Map leet digits to letters and drop separators. Matching-only.
+function normalizeForMatch(s) {
+  let out = '';
+  for (const ch of s) {
+    if (ch === ' ' || ch === '-') continue;
+    out += LEET[ch] || ch;
   }
-  cleaned = cleaned.trim().slice(0, 12);
-  return cleaned.length ? cleaned : 'AAA';
+  return out;
+}
+
+function isNameClean(name) {
+  const norm = normalizeForMatch(name);      // FVCK-1 -> FVCKI, F U C K -> FUCK
+  const collapsed = collapseRepeats(norm);   // FUUUCK -> FUCK
+  for (const term of BANNED_SUBSTRINGS) {
+    if (norm.includes(term)) return false;
+    if (collapsed.includes(collapseRepeats(term))) return false;
+  }
+  for (const term of BANNED_EXACT) {
+    if (norm === term) return false;
+    if (collapsed === collapseRepeats(term)) return false;
+  }
+  return true;
+}
+
+// Full validation: returns the cleaned, uppercased name to store, or null
+// if the submission should be rejected (charset / length / profanity).
+function validateName(raw) {
+  if (typeof raw !== 'string') return null;
+  // Uppercase, squeeze runs of whitespace to single spaces, trim.
+  const cleaned = raw.toUpperCase().replace(/\s+/g, ' ').trim();
+  if (cleaned.length < NAME_MIN || cleaned.length > NAME_MAX) return null;
+  if (!NAME_CHARS.test(cleaned)) return null;
+  if (!isNameClean(cleaned)) return null;
+  return cleaned;
 }
 
 function isPlausible(score, asteroids) {
@@ -73,7 +138,13 @@ export default async (req) => {
     if (!TIERS.includes(tier)) {
       return Response.json({ error: 'bad tier' }, { status: 400 });
     }
-    const name = sanitizeName(body.name);
+    // v0.24.0 — names are validated, not sanitized: a bad name (charset,
+    // length, or profanity) rejects the whole submission with a distinct
+    // error so the client can prompt for a different name.
+    const name = validateName(body.name);
+    if (name === null) {
+      return Response.json({ error: 'bad name' }, { status: 422 });
+    }
     const score = Number(body.score);
     const asteroids = Number(body.asteroids);
     if (!isPlausible(score, asteroids)) {

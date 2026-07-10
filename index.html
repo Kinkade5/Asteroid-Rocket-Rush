@@ -1109,6 +1109,14 @@
     font-size: 13px !important;
     margin: 0 !important;
   }
+  /* v0.24.0 — name-rule feedback under the entry row. Warm amber so it
+     reads as "adjust and retry", not a hard error. */
+  .lb-name-msg {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: #ffb84d;
+  }
   /* === Difficulty selector on start menu === */
   .difficulty-label {
     font-size: 10px;
@@ -1534,6 +1542,9 @@
                placeholder="ENTER NAME" autocomplete="off" spellcheck="false" aria-label="Leaderboard name">
         <button class="btn lb-submit-btn" id="lbSubmitBtn">SUBMIT 🏆</button>
       </div>
+      <!-- v0.24.0 — name validation feedback ("3-12 letters", "try a
+           different name" on a server-side filter rejection). -->
+      <div class="lb-name-msg" id="lbNameMsg" style="display:none"></div>
     </div>
     <div class="btn-row">
       <button class="btn btn-secondary" id="quitBtn">QUIT</button>
@@ -2282,6 +2293,7 @@
   const lbResultEntryEl = document.getElementById('lbResultEntry');
   const lbNameInput = document.getElementById('lbNameInput');
   const lbSubmitBtn = document.getElementById('lbSubmitBtn');
+  const lbNameMsg = document.getElementById('lbNameMsg'); // v0.24.0 — name-rule feedback
   // Difficulty selector + tier indicators
   const difficultyRow = document.getElementById('difficultyRow');
   const tierBadge = document.getElementById('tierBadge');
@@ -4469,9 +4481,10 @@
     return Array.isArray(data.entries) ? data.entries : [];
   }
 
-  // POST a score. Returns { rank, entries } on success, or null on any
-  // failure (network, validation rejection, etc.) — callers treat null as
-  // "couldn't submit" and never block the game on it.
+  // POST a score. Returns { rank, entries } on success, { error } when the
+  // server rejected the submission (v0.24.0: e.g. 'bad name' from the
+  // profanity/charset filter — the client reacts to that one specifically),
+  // or null on network failure. Callers never block the game on any of it.
   async function submitScore(tier, name, score, asteroids) {
     try {
       const res = await fetch(LEADERBOARD_API, {
@@ -4479,11 +4492,25 @@
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ tier, name, score, asteroids }),
       });
-      if (!res.ok) return null;
-      return await res.json();
+      const data = await res.json().catch(() => null);
+      if (!res.ok) return data && data.error ? { error: data.error } : null;
+      return data;
     } catch (_) {
       return null;
     }
+  }
+
+  // v0.24.0 — client-side mirror of the server's name rules (charset +
+  // length only; the profanity blocklist lives server-side as the single
+  // source of truth — the server's 422 'bad name' covers that case).
+  // Returns the cleaned uppercase name, or null with the reason left to
+  // the caller's message.
+  const LB_NAME_CHARS = /^[A-Z0-9 -]+$/;
+  function cleanPlayerName(raw) {
+    const cleaned = String(raw || '').toUpperCase().replace(/\s+/g, ' ').trim();
+    if (cleaned.length < 3 || cleaned.length > 12) return null;
+    if (!LB_NAME_CHARS.test(cleaned)) return null;
+    return cleaned;
   }
 
   // Build the four tier-selector chips in the overlay.
@@ -4576,6 +4603,7 @@
   function handleLeaderboardOnGameOver(tier, score, asteroids) {
     lbResultRankEl.style.display = 'none';
     lbResultEntryEl.style.display = 'none';
+    lbNameMsg.style.display = 'none';
     lbResultEl.style.display = 'none';
     if (score <= 0) return;
 
@@ -4591,6 +4619,14 @@
       lbResultRankEl.style.display = '';
       lbResultRankEl.textContent = '🏆 Submitting…';
       submitScore(tier, playerName, score, asteroids).then(result => {
+        // v0.24.0 — a stored name can still bounce off the server filter
+        // (e.g. saved before the rules tightened). Reopen the entry row so
+        // the player can pick a compliant name without losing the run.
+        if (result && result.error === 'bad name') {
+          lbResultRankEl.style.display = 'none';
+          showLbNameEntry('That name isn\'t allowed — pick another');
+          return;
+        }
         if (!result) { lbResultRankEl.textContent = '🏆 Couldn\'t reach leaderboard'; return; }
         lbResultRankEl.textContent = (result.rank != null)
           ? `🏆 Rank #${result.rank} on ${DIFFICULTIES[tier].name}!`
@@ -4598,29 +4634,55 @@
       });
     } else {
       // First submission — collect a name inline.
-      lbResultEntryEl.style.display = '';
-      lbNameInput.value = '';
+      showLbNameEntry();
+    }
+  }
+
+  // Show the inline name-entry row, optionally with a feedback message
+  // (v0.24.0 — validation/filter feedback lives under the row).
+  function showLbNameEntry(msg) {
+    lbResultEntryEl.style.display = '';
+    lbNameInput.value = '';
+    if (msg) {
+      lbNameMsg.textContent = msg;
+      lbNameMsg.style.display = '';
+    } else {
+      lbNameMsg.style.display = 'none';
     }
   }
 
   // Inline "SUBMIT 🏆" on the game-over screen (first-time name entry).
   // Reads the run's tier/score/asteroids off the button's data attributes
   // (set by gameOver) so a delayed submit still uses the right run's stats.
+  // v0.24.0 — validates charset/length locally (instant feedback); the
+  // server's profanity filter is the final arbiter and can still 422.
   lbSubmitBtn.addEventListener('pointerdown', (e) => {
     e.stopPropagation();
     e.preventDefault();
-    const name = lbNameInput.value.trim();
-    if (!name) { lbNameInput.focus(); return; }
-    savePlayerName(name);
+    const name = cleanPlayerName(lbNameInput.value);
+    if (name === null) {
+      lbNameMsg.textContent = '3–12 letters, numbers, spaces or -';
+      lbNameMsg.style.display = '';
+      lbNameInput.focus();
+      return;
+    }
     const tier = lbSubmitBtn.dataset.tier;
     const score = parseInt(lbSubmitBtn.dataset.score) || 0;
     const asteroids = parseInt(lbSubmitBtn.dataset.asteroids) || 0;
     lbResultEntryEl.style.display = 'none';
+    lbNameMsg.style.display = 'none';
     lbResultRankEl.style.display = '';
     lbResultRankEl.textContent = '🏆 Submitting…';
     Audio.play.uiClick();
     submitScore(tier, name, score, asteroids).then(result => {
+      if (result && result.error === 'bad name') {
+        // Server filter rejected it — reopen entry, don't save the name.
+        lbResultRankEl.style.display = 'none';
+        showLbNameEntry('That name isn\'t allowed — try another');
+        return;
+      }
       if (!result) { lbResultRankEl.textContent = '🏆 Couldn\'t reach leaderboard'; return; }
+      savePlayerName(name); // only persist a name the server accepted
       lbResultRankEl.textContent = (result.rank != null)
         ? `🏆 Rank #${result.rank} on ${DIFFICULTIES[tier].name}!`
         : '🏆 Score submitted';
