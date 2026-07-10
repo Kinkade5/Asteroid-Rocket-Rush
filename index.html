@@ -1528,7 +1528,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.25.0</div>
+    <div class="version-badge" id="versionBadge">v0.25.1</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1562,7 +1562,8 @@
       <div class="lb-result-rank" id="lbResultRank" style="display:none"></div>
       <div class="lb-result-entry" id="lbResultEntry" style="display:none">
         <input type="text" id="lbNameInput" class="lb-name-input" maxlength="12"
-               placeholder="ENTER NAME" autocomplete="off" spellcheck="false" aria-label="Leaderboard name">
+               placeholder="ENTER NAME" autocomplete="off" spellcheck="false" enterkeyhint="done"
+               aria-label="Leaderboard name">
         <button class="btn lb-submit-btn" id="lbSubmitBtn">SUBMIT 🏆</button>
       </div>
       <!-- v0.24.0 — name validation feedback ("3-12 letters", "try a
@@ -1664,7 +1665,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.25.0';
+  const GAME_VERSION = 'v0.25.1';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -4879,9 +4880,16 @@
   // (set by gameOver) so a delayed submit still uses the right run's stats.
   // v0.24.0 — validates charset/length locally (instant feedback); the
   // server's profanity filter is the final arbiter and can still 422.
-  lbSubmitBtn.addEventListener('pointerdown', (e) => {
-    e.stopPropagation();
-    e.preventDefault();
+  //
+  // v0.25.1 — bug fix (mobile): this used to ONLY fire on a physical tap of
+  // the SUBMIT button. On phones, typing a name and pressing the on-screen
+  // keyboard's "Go"/"Done" action key is the instinctive way to submit a
+  // single text field — but that key press wasn't wired to anything (no
+  // <form>, no keydown handler), so it silently did nothing. Mobile players
+  // reported typing a name and never seeing it appear on the board — this
+  // was almost certainly why. Submission logic is now a shared function
+  // called from both the button AND an Enter keydown on the input.
+  function submitLbEntry() {
     const name = cleanPlayerName(lbNameInput.value);
     if (name === null) {
       lbNameMsg.textContent = '3–12 letters, numbers, spaces or -';
@@ -4897,6 +4905,9 @@
     lbResultRankEl.style.display = '';
     lbResultRankEl.textContent = '🏆 Submitting…';
     Audio.play.uiClick();
+    // Drop focus + dismiss the on-screen keyboard so the result text is
+    // immediately visible instead of hidden behind the keyboard.
+    lbNameInput.blur();
     submitScore(tier, name, score, asteroids).then(result => {
       if (result && result.error === 'bad name') {
         // Server filter rejected it — reopen entry, don't save the name.
@@ -4910,6 +4921,16 @@
         ? `🏆 Rank #${result.rank} on ${DIFFICULTIES[tier].name}!`
         : '🏆 Score submitted';
     });
+  }
+  lbSubmitBtn.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    submitLbEntry();
+  });
+  lbNameInput.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    submitLbEntry();
   });
 
   // === Pre-launch countdown (v0.21.1) ===
