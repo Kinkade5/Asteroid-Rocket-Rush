@@ -1528,7 +1528,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.25.1</div>
+    <div class="version-badge" id="versionBadge">v0.25.2</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1665,7 +1665,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.25.1';
+  const GAME_VERSION = 'v0.25.2';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -2524,6 +2524,34 @@
   }
   function saveBestAsteroidsByTier() {
     try { localStorage.setItem('rocketRushBestAsteroidsByTier', JSON.stringify(bestAsteroidsByTier)); } catch (_) {}
+  }
+
+  // v0.25.2 — best score already SUBMITTED to the global leaderboard, per
+  // tier. Distinct from bestScoreByTier (all-time local best): the leaderboard
+  // gate uses THIS so a high pre-existing local best doesn't block board
+  // submissions. The bug it fixes: unlocking Master requires scoring 5000+ on
+  // Expert (MASTER_UNLOCK_TIER/SCORE), so every progressed player has a 5000+
+  // Expert local best — under the old "submit only on personal best" gate,
+  // their normal Expert runs never beat it, so nothing ever reached the Expert
+  // board. Starts at 0 for everyone — deliberately NOT seeded from local bests,
+  // so the first run on any tier can submit.
+  let bestSubmittedByTier = loadBestSubmittedByTier();
+  function loadBestSubmittedByTier() {
+    try {
+      const raw = localStorage.getItem('rocketRushBestSubmittedByTier');
+      if (raw) return { ...defaultTierRecord(), ...JSON.parse(raw) };
+    } catch (_) {}
+    return defaultTierRecord();
+  }
+  function saveBestSubmittedByTier() {
+    try { localStorage.setItem('rocketRushBestSubmittedByTier', JSON.stringify(bestSubmittedByTier)); } catch (_) {}
+  }
+  // Record a score the server accepted, so we only re-submit on improvement.
+  function markSubmitted(tier, score) {
+    if (score > (bestSubmittedByTier[tier] || 0)) {
+      bestSubmittedByTier[tier] = score;
+      saveBestSubmittedByTier();
+    }
   }
 
   // === Legacy constants kept for reference (no longer the source of truth) ===
@@ -4821,9 +4849,9 @@
   });
 
   // === Game-over integration ===
-  // Called from gameOver() only on a personal-best run (scoreIsNewBest).
-  // If a name is set, submits silently and shows the earned rank. If not,
-  // shows an inline name field so the player can join the board.
+  // Called from gameOver() when a run improves on your best SUBMITTED score
+  // for the tier (v0.25.2). If a name is set, submits silently and shows the
+  // earned rank; if not, shows an inline name field so you can join the board.
   function handleLeaderboardOnGameOver(tier, score, asteroids) {
     lbResultRankEl.style.display = 'none';
     lbResultEntryEl.style.display = 'none';
@@ -4852,6 +4880,7 @@
           return;
         }
         if (!result) { lbResultRankEl.textContent = '🏆 Couldn\'t reach leaderboard'; return; }
+        markSubmitted(tier, score); // v0.25.2 — only re-submit on improvement
         lbResultRankEl.textContent = (result.rank != null)
           ? `🏆 Rank #${result.rank} on ${DIFFICULTIES[tier].name}!`
           : '🏆 Score submitted';
@@ -4917,6 +4946,7 @@
       }
       if (!result) { lbResultRankEl.textContent = '🏆 Couldn\'t reach leaderboard'; return; }
       savePlayerName(name); // only persist a name the server accepted
+      markSubmitted(tier, score); // v0.25.2 — only re-submit on improvement
       lbResultRankEl.textContent = (result.rank != null)
         ? `🏆 Rank #${result.rank} on ${DIFFICULTIES[tier].name}!`
         : '🏆 Score submitted';
@@ -5168,10 +5198,13 @@
     refreshWalletUI();
     refreshScoreboardUI();
 
-    // v0.24.0 — leaderboard: only personal-best runs (per tier) go to the
-    // global board, which keeps submissions sparse and each player's board
-    // presence tied to their PB progression. Non-PB runs skip it entirely.
-    if (scoreIsNewBest) {
+    // v0.24.0 — leaderboard: keep submissions sparse by only offering to
+    // submit when a run improves on what you've already put on the board.
+    // v0.25.2 — gate is now bestSubmittedByTier (starts at 0), NOT the
+    // all-time local best, so a high pre-existing local best (e.g. the 5000+
+    // Expert best everyone has from unlocking Master) no longer blocks the
+    // first submission. score > 0 is implied since bestSubmitted defaults 0.
+    if (score > (bestSubmittedByTier[tierId] || 0)) {
       handleLeaderboardOnGameOver(tierId, score, pairsPassed);
     } else {
       lbResultEl.style.display = 'none';
