@@ -963,6 +963,29 @@
     color: #c879ff;
     opacity: 0.9;
   }
+  /* === v0.25.0 — MASTER tab sections + skin cards === */
+  /* Small violet section headings splitting CAPSTONES from SKINS. */
+  .shop-section-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    color: rgba(200, 121, 255, 0.75);
+    text-align: left;
+    padding: 6px 2px 2px;
+  }
+  .shop-section-label:first-child { padding-top: 0; }
+  /* Palette preview dots on skin cards (hull / accent / flame). */
+  .skin-swatches {
+    display: flex;
+    gap: 4px;
+    margin-left: auto;
+  }
+  .skin-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.25);
+  }
   /* === v0.24.0 — Global leaderboard === */
   /* Tier selector: four chips, one per difficulty. Active chip tints to the
      tier's own color (set inline via --tier-color from the JS builder). */
@@ -1505,7 +1528,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.24.0</div>
+    <div class="version-badge" id="versionBadge">v0.25.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1641,7 +1664,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.24.0';
+  const GAME_VERSION = 'v0.25.0';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -1655,13 +1678,20 @@
   // upgrade ownership is settled, so Phase 4 doesn't need a data migration.
   //
   // What IS visible this phase: a vague scoreboard on the main menu showing
-  // lifetime coin progress toward NG_PLUS_THRESHOLD. Deliberately opaque
-  // copy to pique curiosity without spoiling the reveal.
+  // lifetime coin progress toward the NG+ reveal. Deliberately opaque copy
+  // to pique curiosity without spoiling the reveal.
   // v0.23.0 — Phase 4B flips this on: the Master Shop is now reachable
   // once NG+ unlocks (see ngPlusUnlocked()). The mechanics behind it
   // (Phoenix/Surplus/Autopilot) shipped dormant in v0.20.0–v0.22.0.
   const MASTER_SHOP_AVAILABLE = true;
-  const NG_PLUS_THRESHOLD = 100000;
+  // v0.25.0 — meter economy retuned (was a flat 100k per ✦). NG+ now
+  // reveals at the FIRST meter star, and the meter schedule is:
+  //   star 1 at 25k lifetime coins, then +1✦ every 50k after.
+  // So star N is earned at NG_PLUS_REVEAL + (N-1)*METER_STEP. Faster
+  // onboarding into NG+ (reveal at 25k, not 100k) and a gentler steady
+  // cadence. See meterStarsEarnedAt() / nextMeterStarThreshold().
+  const NG_PLUS_REVEAL = 25000;   // reveal + first meter star
+  const METER_STEP = 50000;       // lifetime coins per ✦ after the first
 
   // ======================================================================
   // AUDIO ENGINE
@@ -2901,26 +2931,41 @@
   // ======================================================================
   // v0.23.0 — PHASE 4B: NG+ REVEAL + STAR ECONOMY
   // ======================================================================
-  // The 100k-lifetime mystery bar now pays off. Crossing NG_PLUS_THRESHOLD
-  // opens the Master Shop and starts Star (✦) income. Design: ngplus-design.md
-  // §1-2. All additive — nothing is ever reset or taken away.
+  // The mystery bar now pays off. Crossing NG_PLUS_REVEAL (25k) opens the
+  // Master Shop and starts Star (✦) income. Design: ngplus-design.md §1-2.
+  // All additive — nothing is ever reset or taken away.
 
   // Is NG+ unlocked? Purely derived from lifetime coins, so it's always
   // current and needs no separate persisted flag. Gates the Master Shop tab
   // and the scoreboard's mystery→Star-meter relabel.
-  function ngPlusUnlocked() { return lifetimeCoins >= NG_PLUS_THRESHOLD; }
+  function ngPlusUnlocked() { return lifetimeCoins >= NG_PLUS_REVEAL; }
 
-  // Meter-star ledger — how many "1✦ per 100k lifetime" stars have already
-  // been credited. The idempotent grant pays out the difference between
-  // what's earned (floor(lifetime/threshold)) and what's been credited, so
-  // it can run at both gameOver AND on load (retroactive) with no double-grants.
+  // v0.25.0 — how many meter stars a given lifetime total has earned under
+  // the "25k first, +50k each" schedule. Star 1 at NG_PLUS_REVEAL, then one
+  // more per METER_STEP. Below the reveal: 0.
+  function meterStarsEarnedAt(lifetime) {
+    if (lifetime < NG_PLUS_REVEAL) return 0;
+    return 1 + Math.floor((lifetime - NG_PLUS_REVEAL) / METER_STEP);
+  }
+  // Lifetime total at which the NEXT meter star is earned. Works pre-reveal
+  // too: with 0 earned it returns NG_PLUS_REVEAL (the first star).
+  function nextMeterStarThreshold(lifetime) {
+    return NG_PLUS_REVEAL + meterStarsEarnedAt(lifetime) * METER_STEP;
+  }
+
+  // Meter-star ledger — how many meter stars have already been credited. The
+  // idempotent grant pays out the difference between what's earned (per the
+  // schedule) and what's been credited, so it can run at both gameOver AND on
+  // load (retroactive) with no double-grants. v0.25.0's cheaper schedule only
+  // ever raises the earned count, so returning players get owed stars, never
+  // a clawback.
   let meterStarsGranted = parseInt(localStorage.getItem('rocketRushMeterStarsGranted') || '0');
   function saveMeterStarsGranted() {
     try { localStorage.setItem('rocketRushMeterStarsGranted', String(meterStarsGranted)); } catch (_) {}
   }
   // Grants any owed meter stars, returns how many were granted this call.
   function grantMeterStars() {
-    const earned = Math.floor(lifetimeCoins / NG_PLUS_THRESHOLD);
+    const earned = meterStarsEarnedAt(lifetimeCoins);
     const owed = earned - meterStarsGranted;
     if (owed <= 0) return 0;
     bankedStars += owed;
@@ -3037,6 +3082,124 @@
     Audio.play.coinGold();
     if (navigator.vibrate) navigator.vibrate(20);
     refreshShopView(); // v0.23.0 — repaint balance + card OWNED state
+  }
+
+  // ======================================================================
+  // v0.25.0 — PHASE 4C: ROCKET SKINS (Star-bought cosmetics)
+  // ======================================================================
+  // Pure palette swaps of the drawn rocket — zero gameplay impact. Sold in
+  // the Master Shop below the capstones; tap an owned skin to equip. The
+  // final piece of the NG+ design contract (ngplus-design.md §3), and the
+  // Star sink beyond the 14✦ of capstones (12✦ of skins).
+  //
+  // drawRocket() + the exhaust particles read SKIN_PALETTES[activeSkin]
+  // (same lookup pattern as the v0.21.0 drawCoin() palette refactor).
+  // Event-feedback bursts deliberately do NOT follow the skin: shield pop
+  // stays cyan, phoenix stays orange, death stays red — those colors are
+  // gameplay language, not cosmetics.
+  const SKIN_DEFS = [
+    // 'classic' is listed so the shop shows an equip row for switching back;
+    // cost 0 = always owned, never purchasable.
+    { id: 'classic', label: 'Classic',     cost: 0,
+      desc: 'The original. White hull, red trim.' },
+    { id: 'comet',   label: 'Comet Trail', cost: 2,
+      desc: 'Icy blue hull, cyan flame.' },
+    { id: 'solar',   label: 'Solar Flare', cost: 4,
+      desc: 'Gold hull, amber flame.' },
+    { id: 'void',    label: 'Void Runner', cost: 6,
+      desc: 'Dark hull, violet flame. Matches Autopilot\'s guide line.' },
+  ];
+  const SKIN_PALETTES = {
+    // hull/accent/window: rocket body. flameInner/Mid/Fade: thrust flame
+    // gradient stops. exhaust: thrust+boost particle tint. plume: the two
+    // launch-ignition particle colors.
+    classic: {
+      hull: '#f0f2ff', accent: '#ff4f6d', window: '#6af0ff',
+      flameInner: '#ffd86b', flameMid: '#ff7e3c', flameFade: 'rgba(255,80,60,0)',
+      exhaust: '#ffb84d', plume: ['#ffd86b', '#ff7e3c'],
+    },
+    comet: {
+      // v0.25.0 playtest feedback: first pass was too subtle — hull read as
+      // "still white" and the near-white flameInner read as unchanged at the
+      // menu's tiny idle flame. Saturated both so the skin lands at a glance.
+      hull: '#b8dcff', accent: '#2f88c8', window: '#0d3554',
+      flameInner: '#8fecff', flameMid: '#2fc4e8', flameFade: 'rgba(60,180,255,0)',
+      exhaust: '#5fd4f0', plume: ['#9feaff', '#3fc8ec'],
+    },
+    solar: {
+      hull: '#ffce62', accent: '#d4491c', window: '#5a2a10',
+      flameInner: '#fff3b0', flameMid: '#ff9a2c', flameFade: 'rgba(255,120,30,0)',
+      exhaust: '#ffb84d', plume: ['#fff3b0', '#ff9a2c'],
+    },
+    void: {
+      // Hull is intentionally the lightest "dark" that still reads against
+      // the near-black backdrop; the violet accents + flame carry the look.
+      // v0.25.0 playtest feedback: flameInner saturated (was a near-white
+      // lavender that read as unchanged at the menu's tiny idle flame).
+      hull: '#474368', accent: '#c879ff', window: '#f0e8ff',
+      flameInner: '#d9a0ff', flameMid: '#a24ff0', flameFade: 'rgba(140,60,220,0)',
+      exhaust: '#b06ff5', plume: ['#d9a0ff', '#a24ff0'],
+    },
+  };
+  const DEFAULT_SKINS_OWNED = { comet: false, solar: false, void: false };
+  let skinsOwned = loadSkinsOwned();
+  function loadSkinsOwned() {
+    try {
+      const raw = localStorage.getItem('rocketRushSkinsOwned');
+      if (!raw) return { ...DEFAULT_SKINS_OWNED };
+      const parsed = JSON.parse(raw);
+      // Shape-preserving merge — same pattern as loadMasterUpgrades().
+      const result = { ...DEFAULT_SKINS_OWNED };
+      for (const id in result) {
+        if (typeof parsed[id] === 'boolean') result[id] = parsed[id];
+      }
+      return result;
+    } catch (_) {
+      return { ...DEFAULT_SKINS_OWNED };
+    }
+  }
+  function saveSkinsOwned() {
+    try { localStorage.setItem('rocketRushSkinsOwned', JSON.stringify(skinsOwned)); } catch (_) {}
+  }
+  function isSkinOwned(id) { return id === 'classic' || skinsOwned[id] === true; }
+  // Active skin — unknown or unowned values fall back to classic, so a
+  // tampered/stale save can never equip something unpaid-for or render
+  // with a missing palette.
+  let activeSkin = loadActiveSkin();
+  function loadActiveSkin() {
+    const raw = localStorage.getItem('rocketRushActiveSkin') || 'classic';
+    return (SKIN_PALETTES[raw] && isSkinOwned(raw)) ? raw : 'classic';
+  }
+  function saveActiveSkin() {
+    try { localStorage.setItem('rocketRushActiveSkin', activeSkin); } catch (_) {}
+  }
+  function getSkinPalette() {
+    return SKIN_PALETTES[activeSkin] || SKIN_PALETTES.classic;
+  }
+  // Buy a skin with Stars. Auto-equips on purchase — if you just paid ✦
+  // for a look, you almost certainly want to see it immediately.
+  function attemptSkinPurchase(id) {
+    if (!MASTER_SHOP_AVAILABLE || !ngPlusUnlocked()) return;
+    const def = SKIN_DEFS.find(d => d.id === id);
+    if (!def || def.cost === 0) return;       // classic isn't purchasable
+    if (isSkinOwned(id)) return;
+    if (bankedStars < def.cost) return;
+    bankedStars -= def.cost;
+    skinsOwned[id] = true;
+    activeSkin = id;
+    saveBankedStars();
+    saveSkinsOwned();
+    saveActiveSkin();
+    Audio.play.coinGold();
+    if (navigator.vibrate) navigator.vibrate(20);
+    refreshShopView();
+  }
+  function equipSkin(id) {
+    if (!isSkinOwned(id) || activeSkin === id) return;
+    activeSkin = id;
+    saveActiveSkin();
+    Audio.play.uiClick();
+    refreshShopView();
   }
 
   // === Effective (upgraded) powerup values ===
@@ -3586,7 +3749,8 @@
     if (state !== STATE.PLAY) return;
     rocket.vy = FLAP;
     addParticles(rocket.x - 10, rocket.y + 4, {
-      n: 5, color: '#ffb84d', speed: 1.8, life: 20, vx: -2,
+      // v0.25.0 — boost puff tints to the active skin's exhaust color
+      n: 5, color: getSkinPalette().exhaust, speed: 1.8, life: 20, vx: -2,
     });
   }
 
@@ -3901,28 +4065,31 @@
     }
   }
 
-  // Phase 2 scoreboard — updates the vague progress tile on the main menu.
-  // Called on page load and after each run (via gameOver). The progress
-  // value is lifetimeCoins / NG_PLUS_THRESHOLD; visually caps at 100% even
-  // if lifetime exceeds threshold, since nothing happens at 100% yet.
+  // Phase 2 scoreboard — updates the progress tile on the main menu. Called
+  // on page load and after each run (via gameOver). Pre-reveal it's a vague
+  // mystery bar filling toward NG_PLUS_REVEAL (25k); post-reveal it becomes
+  // an honest ✦ Star meter tracking the next 50k-cadence star.
   function refreshScoreboardUI() {
     if (!scoreboardValue || !scoreboardFill) return;
     if (ngPlusUnlocked()) {
       // v0.23.0 — post-reveal: the mystery tile becomes an honest ✦ Star
-      // meter. Big value = current spendable Stars; bar = progress toward
-      // the next passive "1✦ per 100k lifetime" meter star; tease = how far.
-      const intoWindow = lifetimeCoins % NG_PLUS_THRESHOLD;
-      const remaining = NG_PLUS_THRESHOLD - intoWindow;
+      // meter. Big value = current spendable Stars; bar = progress through
+      // the current meter window toward the next star; tease = how far.
+      // v0.25.0 — windows are METER_STEP (50k) wide once past the first star.
+      const nextAt = nextMeterStarThreshold(lifetimeCoins);
+      const windowStart = nextAt - METER_STEP;
+      const remaining = nextAt - lifetimeCoins;
+      const pct = ((lifetimeCoins - windowStart) / METER_STEP) * 100;
       scoreboardValue.textContent = '✦ ' + bankedStars.toLocaleString();
-      scoreboardFill.style.width = ((intoWindow / NG_PLUS_THRESHOLD) * 100).toFixed(2) + '%';
+      scoreboardFill.style.width = Math.max(0, Math.min(100, pct)).toFixed(2) + '%';
       if (scoreboardTile) scoreboardTile.classList.add('ngplus-unlocked');
       if (scoreboardLabelEl) scoreboardLabelEl.textContent = 'STAR METER';
       if (scoreboardTeaseEl) scoreboardTeaseEl.textContent = `${remaining.toLocaleString()} coins to next ✦`;
       if (scoreboardLockEl) scoreboardLockEl.textContent = '✦';
     } else {
-      // Pre-reveal: original vague mystery tile (caps at 100%).
+      // Pre-reveal: vague mystery tile filling toward the 25k reveal.
       scoreboardValue.textContent = lifetimeCoins.toLocaleString();
-      const pct = Math.min(100, (lifetimeCoins / NG_PLUS_THRESHOLD) * 100);
+      const pct = Math.min(100, (lifetimeCoins / NG_PLUS_REVEAL) * 100);
       scoreboardFill.style.width = pct.toFixed(2) + '%';
     }
   }
@@ -4352,6 +4519,39 @@
         </div>`;
   }
 
+  // v0.25.0 — skin card for the MASTER tab's SKINS section. Three states
+  // for the button: buy (✦ cost), EQUIP (owned but inactive), EQUIPPED
+  // (active, disabled). Classic is cost-0 so it only ever equips. The
+  // swatch row previews hull/accent/flame so players see what they're
+  // buying before spending Stars.
+  function buildSkinCardHtml(def) {
+    const pal = SKIN_PALETTES[def.id];
+    const owned = isSkinOwned(def.id);
+    const active = activeSkin === def.id;
+    let btnHtml;
+    if (active) {
+      btnHtml = `<button class="upgrade-buy master owned" disabled>EQUIPPED</button>`;
+    } else if (owned) {
+      btnHtml = `<button class="upgrade-buy master" data-skin-equip="${def.id}">EQUIP</button>`;
+    } else {
+      const canAfford = bankedStars >= def.cost;
+      btnHtml = `<button class="upgrade-buy master" data-skin-buy="${def.id}"${canAfford ? '' : ' disabled'}>✦ ${def.cost}</button>`;
+    }
+    const swatches =
+      `<span class="skin-swatch" style="background:${pal.hull}"></span>` +
+      `<span class="skin-swatch" style="background:${pal.accent}"></span>` +
+      `<span class="skin-swatch" style="background:${pal.flameMid}"></span>`;
+    return `
+        <div class="upgrade-card master${active ? ' owned' : ''}">
+          <div class="upgrade-header">
+            <div class="upgrade-label">${def.label}</div>
+            <div class="skin-swatches">${swatches}</div>
+          </div>
+          <div class="upgrade-desc">${def.desc}</div>
+          ${btnHtml}
+        </div>`;
+  }
+
   function renderMasterShop() {
     renderShopSegmentedControl();
     shopTitle.textContent = 'MASTER';
@@ -4362,7 +4562,13 @@
     if (shopHangarListEl) shopHangarListEl.classList.add('hidden-view');
     if (!shopMasterListEl) return;
     shopMasterListEl.classList.remove('hidden-view');
-    shopMasterListEl.innerHTML = MASTER_UPGRADE_DEFS.map(buildMasterCardHtml).join('');
+    // v0.25.0 — two sections: capstones (single-purchase powers) then
+    // skins (cosmetics, equip-on-tap). Section labels keep them scannable.
+    shopMasterListEl.innerHTML =
+      '<div class="shop-section-label">CAPSTONES</div>' +
+      MASTER_UPGRADE_DEFS.map(buildMasterCardHtml).join('') +
+      '<div class="shop-section-label">SKINS</div>' +
+      SKIN_DEFS.map(buildSkinCardHtml).join('');
     // Wire ✦ buy buttons → attemptMasterPurchase (stars currency).
     shopMasterListEl.querySelectorAll('.upgrade-buy[data-master]').forEach(btn => {
       btn.addEventListener('pointerdown', (e) => {
@@ -4370,6 +4576,23 @@
         e.stopPropagation();
         e.preventDefault();
         attemptMasterPurchase(btn.getAttribute('data-master'));
+      });
+    });
+    // v0.25.0 — skin buy + equip wiring.
+    shopMasterListEl.querySelectorAll('.upgrade-buy[data-skin-buy]').forEach(btn => {
+      btn.addEventListener('pointerdown', (e) => {
+        if (btn.disabled) return;
+        e.stopPropagation();
+        e.preventDefault();
+        attemptSkinPurchase(btn.getAttribute('data-skin-buy'));
+      });
+    });
+    shopMasterListEl.querySelectorAll('.upgrade-buy[data-skin-equip]').forEach(btn => {
+      btn.addEventListener('pointerdown', (e) => {
+        if (btn.disabled) return;
+        e.stopPropagation();
+        e.preventDefault();
+        equipSkin(btn.getAttribute('data-skin-equip'));
       });
     });
     refreshWalletUI(); // header swaps to ✦ balance on this tab
@@ -4769,11 +4992,13 @@
         flashEl.style.opacity = '0';
       });
       // Big ignition plume behind the rocket
+      // v0.25.0 — plume pair tints to the active skin's palette
+      const plume = getSkinPalette().plume;
       addParticles(rocket.x - 14, rocket.y, {
-        n: 22, color: '#ffd86b', speed: 3.2, life: 28, vx: -3, size: 2,
+        n: 22, color: plume[0], speed: 3.2, life: 28, vx: -3, size: 2,
       });
       addParticles(rocket.x - 14, rocket.y, {
-        n: 14, color: '#ff7e3c', speed: 2.5, life: 26, vx: -2.5, size: 2.5,
+        n: 14, color: plume[1], speed: 2.5, life: 26, vx: -2.5, size: 2.5,
       });
       // Small upward kick so the launch feels like a LAUNCH (not a sag).
       // Previously tried and reverted because of a separate bug that made thrust
@@ -5187,7 +5412,12 @@
       ctx.restore();
     }
 
-    ctx.fillStyle = '#f0f2ff';
+    // v0.25.0 — body colors come from the active skin's palette (Phase 4C).
+    // Geometry is untouched; skins are strictly palette swaps. The window
+    // glint below stays universal white — it's a highlight, not a color.
+    const skin = getSkinPalette();
+
+    ctx.fillStyle = skin.hull;
     ctx.beginPath();
     ctx.moveTo(16, 0);
     ctx.lineTo(6, -8);
@@ -5199,10 +5429,10 @@
     ctx.closePath();
     ctx.fill();
 
-    ctx.fillStyle = '#ff4f6d';
+    ctx.fillStyle = skin.accent;
     ctx.fillRect(-6, -8, 6, 16);
 
-    ctx.fillStyle = '#6af0ff';
+    ctx.fillStyle = skin.window;
     ctx.beginPath();
     ctx.arc(3, 0, 3.2, 0, Math.PI * 2);
     ctx.fill();
@@ -5211,7 +5441,7 @@
     ctx.arc(4, -1, 1.2, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = '#ff4f6d';
+    ctx.fillStyle = skin.accent;
     ctx.beginPath();
     ctx.moveTo(-12, -8);
     ctx.lineTo(-18, -13);
@@ -5228,9 +5458,9 @@
     // Flame — bigger while thrusting
     const fl = (thrusting && state === STATE.PLAY ? 14 : 8) + Math.random() * 5;
     const grad = ctx.createLinearGradient(-16, 0, -16 - fl, 0);
-    grad.addColorStop(0, '#ffd86b');
-    grad.addColorStop(0.5, '#ff7e3c');
-    grad.addColorStop(1, 'rgba(255,80,60,0)');
+    grad.addColorStop(0, skin.flameInner);
+    grad.addColorStop(0.5, skin.flameMid);
+    grad.addColorStop(1, skin.flameFade);
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.moveTo(-16, -4);
@@ -5595,7 +5825,8 @@
       rocket.vy += thrust * dt;
       if (Math.random() < 0.65) {
         addParticles(rocket.x - 14, rocket.y + 4, {
-          n: 2, color: '#ffb84d', speed: 1.8, life: 18, vx: -2.5,
+          // v0.25.0 — thrust exhaust tints to the active skin
+          n: 2, color: getSkinPalette().exhaust, speed: 1.8, life: 18, vx: -2.5,
         });
       }
     }
