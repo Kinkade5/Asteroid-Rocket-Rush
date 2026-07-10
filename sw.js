@@ -1,7 +1,7 @@
 // Rocket Rush service worker
 // Bump CACHE_NAME whenever you change the game code to force an update.
 // Keep this in sync with GAME_VERSION in index.html.
-const CACHE_NAME = 'rocket-rush-v0.23.0';
+const CACHE_NAME = 'rocket-rush-v0.24.0';
 const ASSETS = [
   './',
   './index.html',
@@ -26,6 +26,10 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
+  // v0.24.0 — never intercept the leaderboard API: it must always hit the
+  // network (fresh data, and POSTs must reach the function). Let the browser
+  // handle it directly rather than routing through the cache-first logic.
+  if (e.request.url.includes('/.netlify/functions/')) return;
   // Cache-first strategy — perfect for a static game
   e.respondWith(
     caches.match(e.request).then((cached) => cached || fetch(e.request))

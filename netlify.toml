@@ -1,0 +1,10 @@
+# Netlify config (added v0.24.0 for the leaderboard function).
+# The game is a static single-file site — no build command. Netlify still
+# runs `npm install` because package.json exists, which fetches the
+# leaderboard function's @netlify/blobs dependency.
+[build]
+  publish = "."
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
