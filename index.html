@@ -590,6 +590,26 @@
     border-radius: 50%;
     box-shadow: 0 0 6px rgba(255, 216, 107, 0.6);
   }
+  /* v0.23.0 — when the shop header shows Stars (MASTER tab), the coin dot
+     becomes a violet ✦ glyph: drop the round-dot styling, show the char. */
+  .coin-icon.star-icon {
+    width: auto;
+    height: auto;
+    background: none;
+    border-radius: 0;
+    box-shadow: none;
+    color: #c879ff;
+    font-size: 13px;
+    line-height: 1;
+    text-shadow: 0 0 8px rgba(200, 121, 255, 0.7);
+  }
+  /* Star-currency recolor of the header wallet badge (violet vs gold). */
+  .wallet-badge.stars {
+    background: rgba(200, 121, 255, 0.12);
+    border-color: rgba(200, 121, 255, 0.4);
+    color: #c879ff;
+    box-shadow: 0 0 12px rgba(200, 121, 255, 0.18);
+  }
 
   /* === Coins-earned line on game over === */
   .coins-earned {
@@ -921,6 +941,28 @@
     background: rgba(106, 240, 255, 0.1);
     color: #6af0ff;
   }
+  /* === v0.23.0 — MASTER tab (Star-bought capstones) === */
+  /* Violet accents to match the MASTER tab + Stars currency. Owned cards
+     dim slightly and show a violet OWNED chip; unaffordable/locked follow
+     the shared :disabled dimming. */
+  .upgrade-buy.master {
+    border-color: rgba(200, 121, 255, 0.5);
+    background: rgba(200, 121, 255, 0.1);
+    color: #c879ff;
+  }
+  .upgrade-buy.master:hover { background: rgba(200, 121, 255, 0.2); }
+  .upgrade-buy.master.owned {
+    border-color: rgba(200, 121, 255, 0.35);
+    background: rgba(200, 121, 255, 0.06);
+    color: #9a6fc0;
+  }
+  .upgrade-card.master { border-color: rgba(200, 121, 255, 0.18); }
+  .upgrade-card.master.owned { opacity: 0.78; }
+  /* Prereq-locked note (Full Autopilot before Guidance T3). */
+  .upgrade-values.master-prereq {
+    color: #c879ff;
+    opacity: 0.9;
+  }
   /* === Difficulty selector on start menu === */
   .difficulty-label {
     font-size: 10px;
@@ -1098,6 +1140,13 @@
     color: #4a2a00;
     box-shadow: 0 0 40px rgba(255, 216, 107, 0.55), 0 8px 30px rgba(0,0,0,0.5);
   }
+  /* === v0.23.0 — NG+ reveal toast variant === */
+  /* Violet like the Master unlock toast (shared NG+/Stars visual language),
+     but its own brighter glow so the "Signal Decoded" beat feels bigger. */
+  .ngplus-toast {
+    background: linear-gradient(180deg, #c879ff 0%, #7a3ad8 100%);
+    box-shadow: 0 0 48px rgba(200, 121, 255, 0.7), 0 8px 30px rgba(0,0,0,0.5);
+  }
 
   /* === Phase 2 main-menu scoreboard tile === */
   /* Vague progress indicator toward the NG+ unlock threshold. Deliberately
@@ -1166,6 +1215,23 @@
     background: linear-gradient(90deg, #6af0ff 0%, #c879ff 100%);
     transition: width 0.5s ease-out;
     box-shadow: 0 0 8px rgba(200, 121, 255, 0.4);
+  }
+  /* v0.23.0 — post-reveal Star-meter styling. The big value goes violet
+     ✦, the lock glyph brightens, and a soft violet border says "unlocked,
+     this is now a real meter" instead of the muted mystery tile. */
+  .scoreboard-tile.ngplus-unlocked {
+    border-color: rgba(200, 121, 255, 0.35);
+  }
+  .scoreboard-tile.ngplus-unlocked .scoreboard-value {
+    color: #d8b4ff;
+    text-shadow: 0 0 12px rgba(200, 121, 255, 0.45);
+  }
+  .scoreboard-tile.ngplus-unlocked .scoreboard-lock {
+    opacity: 0.9;
+    color: #c879ff;
+  }
+  .scoreboard-tile.ngplus-unlocked .scoreboard-bar-fill {
+    background: linear-gradient(90deg, #9a4fd8 0%, #e0b8ff 100%);
   }
   .scoreboard-tease {
     margin-top: 8px;
@@ -1253,6 +1319,11 @@
     <div>MASTER UNLOCKED</div>
     <div class="unlock-toast-sub">A new challenge awaits</div>
   </div>
+  <!-- v0.23.0 — NG+ reveal toast (fires once at 100k lifetime coins) -->
+  <div id="ngplusToast" class="unlock-toast ngplus-toast">
+    <div>SIGNAL DECODED ✦</div>
+    <div class="unlock-toast-sub">The Master Shop is open</div>
+  </div>
   <!-- v0.16.0 — SHOP MAXED celebration (fires once when all upgrades reach max) -->
   <div id="shopMaxedToast" class="unlock-toast shop-maxed-toast">
     <div>SHOP MAXED!</div>
@@ -1278,7 +1349,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.22.0</div>
+    <div class="version-badge" id="versionBadge">v0.23.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1299,6 +1370,11 @@
     </div>
     <div class="coins-earned" id="coinsEarnedWrap">
       <span class="coin-icon">●</span> <span id="coinsEarnedText">+0 banked</span>
+    </div>
+    <!-- v0.23.0 — Stars earned this run (Master milestones + meter). Hidden
+         unless the run actually earned ✦, so it never clutters normal runs. -->
+    <div class="coins-earned stars-earned" id="starsEarnedWrap" style="display:none">
+      <span class="coin-icon star-icon">✦</span> <span id="starsEarnedText">+0 ✦</span>
     </div>
     <div class="btn-row">
       <button class="btn btn-secondary" id="quitBtn">QUIT</button>
@@ -1325,7 +1401,7 @@
     <div class="shop-header">
       <button class="shop-back-btn" id="shopBackBtn" aria-label="Back">◀</button>
       <div class="shop-title" id="shopTitle">UPGRADES</div>
-      <div class="wallet-badge wallet-inline"><span class="coin-icon">●</span><span id="shopWallet">0</span></div>
+      <div class="wallet-badge wallet-inline" id="shopWalletBadge"><span class="coin-icon" id="shopWalletIcon">●</span><span id="shopWallet">0</span></div>
     </div>
     <!-- Segmented control — tabs across sub-shops. Rendered dynamically
          in JS from SHOP_TABS so Phase 4 can drop in a MASTER tab without
@@ -1337,6 +1413,8 @@
     <div class="shop-list" id="shopList"></div>
     <!-- HANGAR tab: flat list of Propulsion / Integrity upgrades -->
     <div class="shop-list" id="shopHangarList"></div>
+    <!-- MASTER tab (v0.23.0): flat list of Star-bought capstones -->
+    <div class="shop-list" id="shopMasterList"></div>
     <button class="btn btn-secondary" id="shopCloseBtn" style="margin-top: 16px">CLOSE</button>
   </div>
 
@@ -1372,7 +1450,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.22.0';
+  const GAME_VERSION = 'v0.23.0';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -1388,7 +1466,10 @@
   // What IS visible this phase: a vague scoreboard on the main menu showing
   // lifetime coin progress toward NG_PLUS_THRESHOLD. Deliberately opaque
   // copy to pique curiosity without spoiling the reveal.
-  const MASTER_SHOP_AVAILABLE = false;
+  // v0.23.0 — Phase 4B flips this on: the Master Shop is now reachable
+  // once NG+ unlocks (see ngPlusUnlocked()). The mechanics behind it
+  // (Phoenix/Surplus/Autopilot) shipped dormant in v0.20.0–v0.22.0.
+  const MASTER_SHOP_AVAILABLE = true;
   const NG_PLUS_THRESHOLD = 100000;
 
   // ======================================================================
@@ -1994,11 +2075,22 @@
   // Hangar tab's flat upgrade list container.
   const shopSegmentedEl = document.getElementById('shopSegmented');
   const shopHangarListEl = document.getElementById('shopHangarList');
+  const shopMasterListEl = document.getElementById('shopMasterList'); // v0.23.0
   const shopWallet = document.getElementById('shopWallet');
+  const shopWalletIcon = document.getElementById('shopWalletIcon'); // v0.23.0
+  const shopWalletBadge = document.getElementById('shopWalletBadge');
   const coinsEarnedText = document.getElementById('coinsEarnedText');
   // Phase 2 — scoreboard tile on main menu (lifetime coin progress)
   const scoreboardValue = document.getElementById('scoreboardValue');
   const scoreboardFill = document.getElementById('scoreboardFill');
+  // v0.23.0 — NG+ reveal toast + game-over star-earned line + scoreboard bits
+  const ngplusToast = document.getElementById('ngplusToast');
+  const starsEarnedWrap = document.getElementById('starsEarnedWrap');
+  const starsEarnedText = document.getElementById('starsEarnedText');
+  const scoreboardTile = document.getElementById('scoreboardTile');
+  const scoreboardLabelEl = document.querySelector('.scoreboard-label');
+  const scoreboardTeaseEl = document.querySelector('.scoreboard-tease');
+  const scoreboardLockEl = document.querySelector('.scoreboard-lock');
   // Difficulty selector + tier indicators
   const difficultyRow = document.getElementById('difficultyRow');
   const tierBadge = document.getElementById('tierBadge');
@@ -2603,6 +2695,62 @@
     try { localStorage.setItem('rocketRushLifetimeCoins', String(lifetimeCoins)); } catch (_) {}
   }
 
+  // ======================================================================
+  // v0.23.0 — PHASE 4B: NG+ REVEAL + STAR ECONOMY
+  // ======================================================================
+  // The 100k-lifetime mystery bar now pays off. Crossing NG_PLUS_THRESHOLD
+  // opens the Master Shop and starts Star (✦) income. Design: ngplus-design.md
+  // §1-2. All additive — nothing is ever reset or taken away.
+
+  // Is NG+ unlocked? Purely derived from lifetime coins, so it's always
+  // current and needs no separate persisted flag. Gates the Master Shop tab
+  // and the scoreboard's mystery→Star-meter relabel.
+  function ngPlusUnlocked() { return lifetimeCoins >= NG_PLUS_THRESHOLD; }
+
+  // Meter-star ledger — how many "1✦ per 100k lifetime" stars have already
+  // been credited. The idempotent grant pays out the difference between
+  // what's earned (floor(lifetime/threshold)) and what's been credited, so
+  // it can run at both gameOver AND on load (retroactive) with no double-grants.
+  let meterStarsGranted = parseInt(localStorage.getItem('rocketRushMeterStarsGranted') || '0');
+  function saveMeterStarsGranted() {
+    try { localStorage.setItem('rocketRushMeterStarsGranted', String(meterStarsGranted)); } catch (_) {}
+  }
+  // Grants any owed meter stars, returns how many were granted this call.
+  function grantMeterStars() {
+    const earned = Math.floor(lifetimeCoins / NG_PLUS_THRESHOLD);
+    const owed = earned - meterStarsGranted;
+    if (owed <= 0) return 0;
+    bankedStars += owed;
+    meterStarsGranted = earned;
+    saveBankedStars();
+    saveMeterStarsGranted();
+    return owed;
+  }
+
+  // Master score milestones — Stars earned per run on Master difficulty only.
+  // Values are playtest guesses (see design doc). Per-run, no persistence:
+  // recomputed from this run's score at gameOver. Ascending order required.
+  const MASTER_STAR_MILESTONES = [2500, 5000, 10000];
+  // Grants milestone stars for a completed run; returns count granted (0-3).
+  function grantMasterMilestoneStars(runScore, tierId) {
+    if (tierId !== 'master') return 0;
+    let earned = 0;
+    for (const m of MASTER_STAR_MILESTONES) { if (runScore >= m) earned++; }
+    if (earned <= 0) return 0;
+    bankedStars += earned;
+    saveBankedStars();
+    return earned;
+  }
+
+  // One-shot reveal toast latch. Persisted so the "Signal Decoded" toast
+  // fires exactly once, whether NG+ is first crossed live (gameOver) or
+  // retroactively (a returning player already past 100k when 4B ships).
+  let ngPlusRevealSeen = localStorage.getItem('rocketRushNgPlusRevealSeen') === '1';
+  function markNgPlusRevealSeen() {
+    ngPlusRevealSeen = true;
+    try { localStorage.setItem('rocketRushNgPlusRevealSeen', '1'); } catch (_) {}
+  }
+
   // === Master Shop wares ===
   // Single-purchase items (boolean owned/not-owned), NOT tier stacks —
   // Master wares are unique capabilities, not stat tweaks. Actual gameplay
@@ -2620,7 +2768,9 @@
     // Requires regular Guidance at T3 Precision to work — Master boost is
     // a layer on top of the regular progression, not a bypass.
     { id: 'full_autopilot',  label: 'Full Autopilot',  cost: 3,
-      desc: 'Requires Guidance Precision. +100% guidance strength — smooth auto-threading.' },
+      // v0.23.0 — reworded per user feedback: "Guidance Precision" read as
+      // unclear jargon. Spell out which upgrade + tier is actually required.
+      desc: 'Requires Tier 3 Hyperfocus Guidance. +100% guidance strength — smooth auto-threading.' },
     { id: 'stellar_surplus', label: 'Stellar Surplus', cost: 10,
       desc: '+5% score multiplier every 10 asteroids passed (caps at +50% per run).' },
   ];
@@ -2658,13 +2808,24 @@
     try { localStorage.setItem('rocketRushMasterUpgrades', JSON.stringify(masterUpgrades)); } catch (_) {}
   }
 
-  // Purchase handler. Gated on MASTER_SHOP_AVAILABLE so no accidental buys
-  // can happen in Phase 2 even if someone hacks Stars into localStorage.
+  // v0.23.0 — is a Master ware's prerequisite satisfied? Only Full Autopilot
+  // has one: it layers on the regular Guidance line, so buying it before
+  // Guidance T3 Precision would spend 3✦ on something that literally can't
+  // function (see isAutopilotActive()). We block the purchase until the
+  // prereq is met and surface the reason on the card, rather than let a
+  // player waste Stars. Other wares always return true.
+  function masterPrereqMet(def) {
+    if (def.id === 'full_autopilot') return getGuidanceTier() >= MAX_UPGRADE_TIER;
+    return true;
+  }
+
+  // Purchase handler. Gated on MASTER_SHOP_AVAILABLE + NG+ unlock + prereqs.
   function attemptMasterPurchase(id) {
-    if (!MASTER_SHOP_AVAILABLE) return;
+    if (!MASTER_SHOP_AVAILABLE || !ngPlusUnlocked()) return;
     const def = MASTER_UPGRADE_DEFS.find(d => d.id === id);
     if (!def) return;
-    if (masterUpgrades[def.id]) return; // already owned
+    if (masterUpgrades[def.id]) return;   // already owned
+    if (!masterPrereqMet(def)) return;     // prerequisite not satisfied
     if (bankedStars < def.cost) return;
     bankedStars -= def.cost;
     masterUpgrades[def.id] = true;
@@ -2672,6 +2833,7 @@
     saveMasterUpgrades();
     Audio.play.coinGold();
     if (navigator.vibrate) navigator.vibrate(20);
+    refreshShopView(); // v0.23.0 — repaint balance + card OWNED state
   }
 
   // === Effective (upgraded) powerup values ===
@@ -3519,7 +3681,16 @@
   function refreshWalletUI() {
     const formatted = bankedCoins.toLocaleString();
     walletAmount.textContent = formatted;
-    shopWallet.textContent = formatted;
+    // v0.23.0 — the shop header shows the currency for the active tab:
+    // ✦ Stars on the MASTER tab, coins everywhere else. The badge also
+    // recolors via a `.stars` class (violet) so the swap reads instantly.
+    const onMaster = currentShopTab === 'master';
+    shopWallet.textContent = onMaster ? bankedStars.toLocaleString() : formatted;
+    if (shopWalletIcon) {
+      shopWalletIcon.textContent = onMaster ? '✦' : '●';
+      shopWalletIcon.classList.toggle('star-icon', onMaster);
+    }
+    if (shopWalletBadge) shopWalletBadge.classList.toggle('stars', onMaster);
     // Main-menu SHOP button gets a subtle highlight when purchases are
     // possible. Toggling a class keeps the visual in CSS for easy tweaking.
     if (shopBtn) {
@@ -3533,9 +3704,24 @@
   // if lifetime exceeds threshold, since nothing happens at 100% yet.
   function refreshScoreboardUI() {
     if (!scoreboardValue || !scoreboardFill) return;
-    scoreboardValue.textContent = lifetimeCoins.toLocaleString();
-    const pct = Math.min(100, (lifetimeCoins / NG_PLUS_THRESHOLD) * 100);
-    scoreboardFill.style.width = pct.toFixed(2) + '%';
+    if (ngPlusUnlocked()) {
+      // v0.23.0 — post-reveal: the mystery tile becomes an honest ✦ Star
+      // meter. Big value = current spendable Stars; bar = progress toward
+      // the next passive "1✦ per 100k lifetime" meter star; tease = how far.
+      const intoWindow = lifetimeCoins % NG_PLUS_THRESHOLD;
+      const remaining = NG_PLUS_THRESHOLD - intoWindow;
+      scoreboardValue.textContent = '✦ ' + bankedStars.toLocaleString();
+      scoreboardFill.style.width = ((intoWindow / NG_PLUS_THRESHOLD) * 100).toFixed(2) + '%';
+      if (scoreboardTile) scoreboardTile.classList.add('ngplus-unlocked');
+      if (scoreboardLabelEl) scoreboardLabelEl.textContent = 'STAR METER';
+      if (scoreboardTeaseEl) scoreboardTeaseEl.textContent = `${remaining.toLocaleString()} coins to next ✦`;
+      if (scoreboardLockEl) scoreboardLockEl.textContent = '✦';
+    } else {
+      // Pre-reveal: original vague mystery tile (caps at 100%).
+      scoreboardValue.textContent = lifetimeCoins.toLocaleString();
+      const pct = Math.min(100, (lifetimeCoins / NG_PLUS_THRESHOLD) * 100);
+      scoreboardFill.style.width = pct.toFixed(2) + '%';
+    }
   }
 
   // ===== Difficulty selector =====
@@ -3625,8 +3811,7 @@
   const SHOP_TABS = [
     { id: 'upgrades', label: 'UPGRADES' },
     { id: 'hangar',   label: 'HANGAR' },
-    // Phase 4:
-    // { id: 'master', label: 'MASTER' },
+    { id: 'master',   label: 'MASTER ✦' }, // v0.23.0 — visible once NG+ unlocks
   ];
   let currentShopTab = 'upgrades';
 
@@ -3636,7 +3821,12 @@
   function getVisibleShopTabs() {
     return SHOP_TABS.filter(t => {
       if (t.id === 'master') {
-        return MASTER_SHOP_AVAILABLE && isMasterUnlocked();
+        // v0.23.0 — gate is now NG+ (lifetime coins), NOT the Expert-score
+        // Master-difficulty unlock. A player can reach 100k lifetime without
+        // ever unlocking Master tier; they still get the shop (their Star
+        // income is just meter-only until they unlock Master). Independent
+        // gates by design — see ngplus-design.md §1.
+        return MASTER_SHOP_AVAILABLE && ngPlusUnlocked();
       }
       return true;
     });
@@ -3746,10 +3936,11 @@
     currentShopTab = tabId;
     currentShopCategory = null;
     Audio.play.uiClick();
-    if (tabId === 'hangar') {
+    if (tabId === 'master') {
+      renderMasterShop();
+    } else if (tabId === 'hangar') {
       renderHangarUpgrades();
     } else {
-      // 'upgrades' (and Phase-4 future tabs route here by default)
       renderShopCategories();
     }
   }
@@ -3765,6 +3956,10 @@
     // Phase 2.5 — hide the hangar list when we're back on the UPGRADES
     // category grid (it would otherwise persist from a previous tab visit).
     if (shopHangarListEl) shopHangarListEl.classList.add('hidden-view');
+    // v0.23.0 — same reasoning for the MASTER list (bug fix: this was
+    // missing, so the Master pane stayed visible underneath every other
+    // tab once you'd visited it once).
+    if (shopMasterListEl) shopMasterListEl.classList.add('hidden-view');
 
     let html = '';
     for (const cat of CATEGORIES) {
@@ -3909,6 +4104,8 @@
     // Hide the UPGRADES-tab panes, show the hangar list pane.
     shopCategoriesEl.classList.add('hidden-view');
     shopList.classList.add('hidden-view');
+    // v0.23.0 — bug fix: also hide MASTER (see renderShopCategories note).
+    if (shopMasterListEl) shopMasterListEl.classList.add('hidden-view');
     if (!shopHangarListEl) return;
     shopHangarListEl.classList.remove('hidden-view');
     const defs = UPGRADE_DEFS.filter(d => d.category === 'hangar');
@@ -3916,9 +4113,70 @@
     wireUpgradeBuyButtons(shopHangarListEl);
   }
 
+  // ===== Shop rendering — MASTER tab (v0.23.0) =====
+  // Flat list of Star-bought capstones. Structurally like the HANGAR tab
+  // (no category drill-in) but a different currency (✦) and a different
+  // card shape: single-purchase (OWNED / cost / prereq-locked), not tiered.
+  function buildMasterCardHtml(def) {
+    const owned = masterUpgrades[def.id] === true;
+    const prereqMet = masterPrereqMet(def);
+    const canAfford = bankedStars >= def.cost;
+
+    let btnHtml;
+    if (owned) {
+      btnHtml = `<button class="upgrade-buy master owned" disabled>OWNED</button>`;
+    } else if (!prereqMet) {
+      // Full Autopilot before Guidance T3 — blocked, reason shown below.
+      btnHtml = `<button class="upgrade-buy master" disabled>LOCKED</button>`;
+    } else {
+      const enabled = canAfford ? '' : ' disabled';
+      btnHtml = `<button class="upgrade-buy master" data-master="${def.id}"${enabled}>✦ ${def.cost}</button>`;
+    }
+
+    // Prereq warning only when relevant (unmet + not already owned).
+    const prereqHtml = (!prereqMet && !owned)
+      ? `<div class="upgrade-values master-prereq">🔒 Requires Tier 3 Hyperfocus Guidance</div>`
+      : '';
+
+    return `
+        <div class="upgrade-card master${owned ? ' owned' : ''}">
+          <div class="upgrade-header">
+            <div class="upgrade-label">${def.label}</div>
+          </div>
+          <div class="upgrade-desc">${def.desc}</div>
+          ${prereqHtml}
+          ${btnHtml}
+        </div>`;
+  }
+
+  function renderMasterShop() {
+    renderShopSegmentedControl();
+    shopTitle.textContent = 'MASTER';
+    shopBackBtn.classList.remove('visible');
+    // Hide the other tabs' panes, show the master list.
+    shopCategoriesEl.classList.add('hidden-view');
+    shopList.classList.add('hidden-view');
+    if (shopHangarListEl) shopHangarListEl.classList.add('hidden-view');
+    if (!shopMasterListEl) return;
+    shopMasterListEl.classList.remove('hidden-view');
+    shopMasterListEl.innerHTML = MASTER_UPGRADE_DEFS.map(buildMasterCardHtml).join('');
+    // Wire ✦ buy buttons → attemptMasterPurchase (stars currency).
+    shopMasterListEl.querySelectorAll('.upgrade-buy[data-master]').forEach(btn => {
+      btn.addEventListener('pointerdown', (e) => {
+        if (btn.disabled) return;
+        e.stopPropagation();
+        e.preventDefault();
+        attemptMasterPurchase(btn.getAttribute('data-master'));
+      });
+    });
+    refreshWalletUI(); // header swaps to ✦ balance on this tab
+  }
+
   // Called after any purchase — refreshes whichever view is currently open.
   function refreshShopView() {
-    if (currentShopTab === 'hangar') {
+    if (currentShopTab === 'master') {
+      renderMasterShop();
+    } else if (currentShopTab === 'hangar') {
       renderHangarUpgrades();
     } else if (currentShopCategory) {
       renderCategoryUpgrades(currentShopCategory);
@@ -3988,6 +4246,7 @@
     hideOverlay(shopScreen);
     showOverlay(startScreen);
     refreshWalletUI();
+    refreshScoreboardUI(); // v0.23.0 — Star meter reflects ✦ spent in the shop
   });
 
   // === Pre-launch countdown (v0.21.1) ===
@@ -4199,6 +4458,27 @@
     lifetimeCoins += coinsThisRun;
     saveLifetimeCoins();
     coinsEarnedText.textContent = `+${coinsThisRun.toLocaleString()} banked (${bankedCoins.toLocaleString()} total)`;
+
+    // === v0.23.0 — Star income (NG+) ===
+    // Order matters: bank coins first (above) so grantMeterStars() sees the
+    // updated lifetime total. Meter = 1✦ per 100k lifetime (any tier,
+    // idempotent). Milestones = up to 3✦ for this run's score on Master.
+    const meterStarsThisRun = grantMeterStars();
+    const milestoneStarsThisRun = grantMasterMilestoneStars(score, tierId);
+    const starsThisRun = meterStarsThisRun + milestoneStarsThisRun;
+    // Did banking this run's coins just cross the NG+ threshold for the
+    // first time? (ngPlusUnlocked() reads the now-updated lifetime.)
+    const justRevealedNgPlus = ngPlusUnlocked() && !ngPlusRevealSeen;
+    // Game-over star line — only shown when ✦ were actually earned.
+    if (starsEarnedWrap) {
+      if (starsThisRun > 0) {
+        starsEarnedText.textContent = `+${starsThisRun} ✦ earned`;
+        starsEarnedWrap.style.display = '';
+      } else {
+        starsEarnedWrap.style.display = 'none';
+      }
+    }
+
     refreshWalletUI();
     refreshScoreboardUI();
 
@@ -4252,6 +4532,18 @@
           if (navigator.vibrate) navigator.vibrate([40, 60, 40, 60, 80]);
         }, 500);
         setTimeout(() => unlockToast.classList.remove('show'), 3200);
+      }
+      // v0.23.0 — NG+ reveal toast. If a Master-unlock toast is ALSO firing
+      // this run (rare), stagger the reveal to land after it clears so they
+      // don't overlap at the same screen position.
+      if (justRevealedNgPlus) {
+        const revealDelay = justUnlockedMaster ? 3600 : 500;
+        setTimeout(() => {
+          ngplusToast.classList.add('show');
+          markNgPlusRevealSeen();
+          if (navigator.vibrate) navigator.vibrate([30, 50, 30, 50, 30, 50, 90]);
+        }, revealDelay);
+        setTimeout(() => ngplusToast.classList.remove('show'), revealDelay + 2900);
       }
     }, 700);
   }
@@ -5531,9 +5823,25 @@
   setButtonsEnabled(gameOverScreen, false);
   setButtonsEnabled(shopScreen, false);
   setButtonsEnabled(settingsScreen, false);
+  // v0.23.0 — retroactive NG+ grant on load. A player already past 100k
+  // lifetime when 4B ships (the bar's been sitting capped at 100%) gets
+  // their owed meter stars immediately, and the reveal toast fires once so
+  // they learn the Master Shop opened. grantMeterStars() is idempotent, so
+  // this can't double-grant with the per-run grant in gameOver().
+  grantMeterStars();
+  const revealOnLoad = ngPlusUnlocked() && !ngPlusRevealSeen;
   refreshWalletUI();  // show current banked coins on main menu
-  refreshScoreboardUI();  // Phase 2: show lifetime coins + NG+ progress bar
+  refreshScoreboardUI();  // Phase 2/4B: mystery bar, or ✦ Star meter once unlocked
   renderDifficultySelector();  // build the 4 tiles (Master locked unless unlocked)
+  if (revealOnLoad) {
+    // Land the toast a beat after the menu paints so it reads clearly.
+    setTimeout(() => {
+      ngplusToast.classList.add('show');
+      markNgPlusRevealSeen();
+      if (navigator.vibrate) navigator.vibrate([30, 50, 30, 50, 30, 50, 90]);
+    }, 900);
+    setTimeout(() => ngplusToast.classList.remove('show'), 4000);
+  }
   // v0.15.0 — sync the reduced-motion body class from persisted/default
   // accessibility settings so CSS overrides (strobe disable, toast
   // bounce disable, etc.) are active from first paint.
