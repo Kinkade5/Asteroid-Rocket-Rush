@@ -26,9 +26,14 @@
     user-select: none;
     -webkit-user-select: none;
     -webkit-tap-highlight-color: transparent;
-    /* Respect iOS safe areas in standalone mode */
+    /* Respect safe areas in standalone/fullscreen mode (iOS notch, Android
+       display cutouts). v0.26.0 — left/right added for Play Store (TWA)
+       hardening: portrait cutouts are usually top/bottom, but rounded
+       corners and camera cutouts can intrude laterally on some devices. */
     padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
   }
   body {
     display: flex;
@@ -114,6 +119,44 @@
     60%  { transform: scale(1.15); opacity: 1; }
     100% { transform: scale(1); opacity: 1; }
   }
+  /* === Pause screen (v0.26.0 — Play Store Phase A) === */
+  /* Shown when the Android back button (or Esc / tab-hide) interrupts a
+     run. Scrim dims the frozen gameplay behind it so PAUSED reads clearly. */
+  .pause-screen {
+    background: rgba(5, 6, 15, 0.6);
+    backdrop-filter: blur(2px);
+  }
+  .pause-title {
+    font-size: clamp(28px, 7vw, 40px);
+    font-weight: 800;
+    letter-spacing: 4px;
+    color: #fff;
+    text-shadow: 0 0 30px rgba(106, 240, 255, 0.35);
+    margin-bottom: 24px;
+  }
+  /* === "Press back again to exit" hint (v0.26.0) === */
+  /* Android convention: first back-press at the menu root shows this and
+     disarms the trap; a second press actually leaves the app. */
+  .back-exit-hint {
+    position: absolute;
+    left: 50%;
+    bottom: 48px;
+    transform: translateX(-50%);
+    background: rgba(15, 20, 45, 0.92);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 999px;
+    padding: 8px 18px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #c9d0f2;
+    letter-spacing: 0.5px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+    z-index: 30;
+    white-space: nowrap;
+  }
+  .back-exit-hint.show { opacity: 1; }
   /* === Multiplier milestone popup (v0.22.0) === */
   /* Brief center-screen callout when the COMBINED score multiplier
      (2× powerup × Shock × Stellar Surplus) crosses 5× / 10×. The small
@@ -1528,7 +1571,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.25.2</div>
+    <div class="version-badge" id="versionBadge">v0.26.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1633,6 +1676,20 @@
     <button class="btn btn-secondary" id="leaderboardCloseBtn" style="margin-top: 16px">CLOSE</button>
   </div>
 
+  <!-- Pause overlay (v0.26.0 — Play Store Phase A). Opened by the Android
+       back button, Esc, or the tab losing visibility mid-run. The world
+       freezes (STATE.PAUSED) behind the scrim; RESUME re-runs the 3-2-1
+       countdown without the launch burst so nobody dies to an unpause. -->
+  <div id="pauseScreen" class="overlay pause-screen hidden gone">
+    <div class="pause-title">PAUSED</div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" id="pauseQuitBtn">QUIT</button>
+      <button class="btn" id="pauseResumeBtn">RESUME ▶</button>
+    </div>
+  </div>
+  <!-- Android double-back-to-exit hint (v0.26.0) -->
+  <div class="back-exit-hint" id="backExitHint">Press back again to exit</div>
+
   <!-- Settings overlay (opened from gear on start screen) -->
   <div id="settingsScreen" class="overlay hidden gone">
     <div class="settings-panel">
@@ -1665,7 +1722,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.25.2';
+  const GAME_VERSION = 'v0.26.0';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -2325,6 +2382,11 @@
   const lbNameInput = document.getElementById('lbNameInput');
   const lbSubmitBtn = document.getElementById('lbSubmitBtn');
   const lbNameMsg = document.getElementById('lbNameMsg'); // v0.24.0 — name-rule feedback
+  // v0.26.0 — pause screen + Android back-button exit hint
+  const pauseScreen = document.getElementById('pauseScreen');
+  const pauseResumeBtn = document.getElementById('pauseResumeBtn');
+  const pauseQuitBtn = document.getElementById('pauseQuitBtn');
+  const backExitHint = document.getElementById('backExitHint');
   // Difficulty selector + tier indicators
   const difficultyRow = document.getElementById('difficultyRow');
   const tierBadge = document.getElementById('tierBadge');
@@ -2357,7 +2419,12 @@
   // holds during the "3-2-1-GO" beat. It behaves like MENU for physics/world
   // gating (see loop()'s else-branch and worldActive checks) — the rocket
   // idle-floats and the backdrop drifts gently, exactly like before a run.
-  const STATE = { MENU: 0, PLAY: 1, DEAD: 2, COUNTDOWN: 3 };
+  // v0.26.0 — PAUSED added (Play Store Phase A): a mid-run freeze opened by
+  // the Android back button, Esc, or tab-hide. Unlike MENU/COUNTDOWN it has
+  // its OWN loop() branch that runs no logic at all — the world must stay
+  // exactly where it froze (the idle-float branch would teleport the rocket
+  // back to center, potentially into an asteroid on resume).
+  const STATE = { MENU: 0, PLAY: 1, DEAD: 2, COUNTDOWN: 3, PAUSED: 4 };
   let state = STATE.MENU;
 
   // Best scores are now tracked per-tier (see bestScoreByTier /
@@ -3942,6 +4009,13 @@
     overlayEl.classList.remove('hidden');
     overlayEl.classList.add('active');
     setButtonsEnabled(overlayEl, true);
+    // v0.26.0 — any overlay opening re-arms the Android back trap. Matters
+    // after a menu fall-through (trap deliberately left unarmed for the
+    // double-back exit): opening the shop right then must re-arm, or a back
+    // press inside the shop would exit the whole app. Idempotent, and
+    // armBackTrap is a hoisted function declaration defined later in this
+    // file, so calling it from here is safe.
+    armBackTrap();
   }
 
   function hideOverlay(overlayEl) {
@@ -4971,7 +5045,19 @@
   const COUNTDOWN_TICK_MS = 600;  // ms each of "3","2","1" is shown
   const COUNTDOWN_GO_MS   = 350;  // ms "GO!" flashes before gameplay begins
 
+  // v0.26.0 — generation token makes the countdown cancellable. The tick
+  // chain is raw setTimeouts; without this, backing out mid-countdown (back
+  // button → menu) would let a stale timer fire onComplete and flip the game
+  // to PLAY while sitting on the menu. Every runCountdown() bumps the
+  // generation; stale timers see the mismatch and die silently.
+  let countdownGen = 0;
+  function cancelCountdown() {
+    countdownGen++;
+    countdownOverlay.classList.remove('active');
+  }
+
   function runCountdown(onComplete) {
+    const gen = ++countdownGen;
     const steps = ['3', '2', '1'];
     let i = 0;
     function showStep(text, isGo) {
@@ -4987,6 +5073,7 @@
     showStep(steps[0], false);
     Audio.play.countdownTick();
     function tick() {
+      if (gen !== countdownGen) return; // cancelled — die silently
       i++;
       if (i < steps.length) {
         showStep(steps[i], false);
@@ -4996,6 +5083,7 @@
         showStep('GO!', true);
         Audio.play.countdownGo();
         setTimeout(() => {
+          if (gen !== countdownGen) return; // cancelled during GO! flash
           countdownOverlay.classList.remove('active');
           onComplete();
         }, COUNTDOWN_GO_MS);
@@ -5013,6 +5101,9 @@
     // in any state); holding through the countdown means thrust is
     // already live the instant PLAY begins.
     state = STATE.COUNTDOWN;
+    // v0.26.0 — starting a run re-arms the Android back trap (it can be
+    // unarmed if the player just did a single back press at the menu).
+    armBackTrap();
     hideOverlay(startScreen);
     hideOverlay(gameOverScreen);
     // Hide the unlock toast in case it was still showing from the last run
@@ -5100,6 +5191,144 @@
     // run that just ended.
     renderDifficultySelector();
   }
+
+  // ======================================================================
+  // v0.26.0 — PLAY STORE PHASE A: PAUSE + ANDROID BACK BUTTON
+  // ======================================================================
+  // In a TWA, pressing Back with no history to pop closes the whole app —
+  // mid-run, that would silently kill the player's game. Strategy: keep one
+  // sentinel history entry armed; popstate consumes it, routes the press to
+  // the right in-game action (close overlay / pause / quit to menu), and
+  // re-arms. Only at the bare menu does a press fall through: it shows the
+  // Android-standard "press back again to exit" hint and stays unarmed, so
+  // the SECOND press genuinely exits. Any overlay opening re-arms.
+
+  // === Pause ===
+  // `resuming` covers the 3-2-1 beat after RESUME: state stays PAUSED (the
+  // world must not move — the idle-float branch would teleport the rocket)
+  // and the countdown flips to PLAY at GO. Back presses during that beat
+  // are swallowed so they can't stack pause-on-resume weirdness.
+  let resuming = false;
+  function pauseGame() {
+    if (state !== STATE.PLAY) return;
+    state = STATE.PAUSED;
+    resuming = false;
+    thrusting = false;
+    keyHeld = false;
+    Audio.stopThrust();
+    thrustSoundOn = false;
+    Audio.play.uiBack();
+    showOverlay(pauseScreen);
+  }
+  function resumeGame() {
+    if (state !== STATE.PAUSED || resuming) return;
+    resuming = true;
+    hideOverlay(pauseScreen);
+    Audio.play.uiClick();
+    // Same 3-2-1 beat as a launch, minus the launch burst — no ignition
+    // plume/kick on unpause, and no one dies to a surprise resume.
+    runCountdown(() => {
+      resuming = false;
+      state = STATE.PLAY;
+    });
+  }
+  // Quit out of a paused (or mid-countdown) run back to the menu.
+  function abandonRunToMenu() {
+    cancelCountdown();
+    resuming = false;
+    hideOverlay(pauseScreen);
+    goToMenu();
+  }
+  pauseResumeBtn.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    resumeGame();
+  });
+  pauseQuitBtn.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    Audio.play.uiBack();
+    abandonRunToMenu();
+  });
+
+  // Auto-pause when the app/tab is hidden mid-run (phone call, app switch,
+  // screen lock). rAF stops while hidden anyway; this makes the freeze
+  // explicit and gives a deliberate RESUME beat on return.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && state === STATE.PLAY) pauseGame();
+  });
+
+  // Esc mirrors the Android back button for desktop players.
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (state === STATE.PLAY) pauseGame();
+    else if (state === STATE.PAUSED && !resuming) resumeGame();
+  });
+
+  // === Back button (history sentinel) ===
+  let backArmed = false;
+  function armBackTrap() {
+    if (backArmed) return;
+    history.pushState({ rr: 'trap' }, '');
+    backArmed = true;
+  }
+  let backHintTimer = null;
+  function showBackExitHint() {
+    backExitHint.classList.add('show');
+    clearTimeout(backHintTimer);
+    backHintTimer = setTimeout(() => backExitHint.classList.remove('show'), 2000);
+  }
+  // Routes one back press. Returns true if consumed (re-arm), false to
+  // leave the trap unarmed so the next press exits the app.
+  function handleBackPress() {
+    if (settingsScreen.classList.contains('active')) {
+      Audio.play.uiBack();
+      hideOverlay(settingsScreen);
+      showOverlay(startScreen);
+      return true;
+    }
+    if (shopScreen.classList.contains('active')) {
+      Audio.play.uiBack();
+      currentShopCategory = null;
+      hideOverlay(shopScreen);
+      showOverlay(startScreen);
+      refreshWalletUI();
+      refreshScoreboardUI();
+      return true;
+    }
+    if (leaderboardScreen.classList.contains('active')) {
+      Audio.play.uiBack();
+      hideOverlay(leaderboardScreen);
+      showOverlay(startScreen);
+      return true;
+    }
+    if (state === STATE.PLAY) { pauseGame(); return true; }
+    if (state === STATE.PAUSED) {
+      if (resuming) return true; // swallow during the resume beat
+      Audio.play.uiBack();
+      abandonRunToMenu();
+      return true;
+    }
+    if (state === STATE.COUNTDOWN) {
+      // Run hasn't started — nothing to lose, straight back to menu.
+      Audio.play.uiBack();
+      abandonRunToMenu();
+      return true;
+    }
+    if (state === STATE.DEAD) {
+      Audio.play.uiBack();
+      goToMenu();
+      return true;
+    }
+    // Bare menu: let it fall through (Android double-back-to-exit).
+    showBackExitHint();
+    return false;
+  }
+  window.addEventListener('popstate', () => {
+    backArmed = false;
+    if (handleBackPress()) armBackTrap();
+  });
+  armBackTrap(); // arm on load
 
   function gameOver() {
     if (state !== STATE.PLAY) return;
@@ -5242,6 +5471,9 @@
     }
 
     setTimeout(() => {
+      // v0.26.0 — the back button can quit to the menu inside this 700ms
+      // window; without this guard the overlay would pop up over the menu.
+      if (state !== STATE.DEAD) return;
       showOverlay(gameOverScreen);
       // Flash the NEW BEST! badges AFTER the overlay is visible so the
       // pop animation reads clearly. Extra delay per badge so the two
@@ -6357,7 +6589,9 @@
     // v0.21.1 — include COUNTDOWN so shield pips are already visible during
     // the pre-launch beat, matching the HUD (which startGame() reveals before
     // the countdown runs) instead of popping in only once PLAY begins.
-    if (state === STATE.PLAY || state === STATE.DEAD || state === STATE.COUNTDOWN) {
+    // v0.26.0 — include PAUSED so the HUD doesn't blink out under the
+    // pause scrim.
+    if (state === STATE.PLAY || state === STATE.DEAD || state === STATE.COUNTDOWN || state === STATE.PAUSED) {
       const maxShields = getMaxShields();
       let pips = '';
       for (let i = 0; i < maxShields; i++) {
@@ -6529,6 +6763,11 @@
 
     if (state === STATE.PLAY) update(dt);
     else if (state === STATE.DEAD) updateDead(dt);
+    else if (state === STATE.PAUSED) {
+      // v0.26.0 — frozen. Deliberately NO logic here: the idle-float branch
+      // below would teleport the rocket back to center mid-run, potentially
+      // inside an asteroid on resume. The world renders exactly as it froze.
+    }
     else {
       rocket.y = BASE_H / 2 + Math.sin(t / 400) * 12;
       rocket.rot = Math.sin(t / 400) * 0.12;
@@ -6558,6 +6797,7 @@
   setButtonsEnabled(shopScreen, false);
   setButtonsEnabled(settingsScreen, false);
   setButtonsEnabled(leaderboardScreen, false); // v0.24.0
+  setButtonsEnabled(pauseScreen, false); // v0.26.0
   // v0.23.0 — retroactive NG+ grant on load. A player already past 100k
   // lifetime when 4B ships (the bar's been sitting capped at 100%) gets
   // their owed meter stars immediately, and the reveal toast fires once so

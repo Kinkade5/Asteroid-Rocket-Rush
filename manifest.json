@@ -1,4 +1,5 @@
 {
+  "id": "/",
   "name": "Rocket Rush",
   "short_name": "Rocket Rush",
   "description": "Dodge asteroids, grab power-ups, chase the high score.",
@@ -6,6 +7,10 @@
   "scope": "./",
   "display": "fullscreen",
   "orientation": "portrait",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["games"],
+  "prefer_related_applications": false,
   "background_color": "#05060f",
   "theme_color": "#05060f",
   "icons": [
