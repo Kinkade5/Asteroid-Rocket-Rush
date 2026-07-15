@@ -1,10 +1,11 @@
 // Rocket Rush service worker
 // Bump CACHE_NAME whenever you change the game code to force an update.
 // Keep this in sync with GAME_VERSION in index.html.
-const CACHE_NAME = 'rocket-rush-v0.26.0';
+const CACHE_NAME = 'rocket-rush-v0.27.0';
 const ASSETS = [
   './',
   './index.html',
+  './privacy.html', // v0.27.0 — policy readable offline too
   './manifest.json',
   './icon-192.png',
   './icon-512.png',

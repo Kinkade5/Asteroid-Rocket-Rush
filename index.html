@@ -572,6 +572,21 @@
     font-size: 14px;
     letter-spacing: 1px;
   }
+  /* v0.27.0 — Play Store Phase B: privacy policy link at the bottom of the
+     settings panel. Quiet on purpose — informational, not a call to action. */
+  .settings-privacy-link {
+    display: block;
+    text-align: center;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    color: #8a93c0;
+    font-size: 12px;
+    letter-spacing: 1px;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .settings-privacy-link:active { color: #6af0ff; }
 
   /* iOS-style toggle switch */
   .toggle {
@@ -1571,7 +1586,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.26.0</div>
+    <div class="version-badge" id="versionBadge">v0.27.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1709,6 +1724,9 @@
         <span>REDUCE MOTION</span>
         <div class="toggle" id="motionToggle" role="switch" aria-checked="false"></div>
       </div>
+      <!-- v0.27.0 — Play Store Phase B: link to the hosted privacy policy.
+           target=_blank so the game keeps running; rel=noopener for safety. -->
+      <a class="settings-privacy-link" href="./privacy.html" target="_blank" rel="noopener">Privacy Policy</a>
     </div>
     <button class="btn btn-secondary" id="settingsCloseBtn" style="margin-top: 20px">CLOSE</button>
   </div>
@@ -1722,7 +1740,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.26.0';
+  const GAME_VERSION = 'v0.27.0';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
