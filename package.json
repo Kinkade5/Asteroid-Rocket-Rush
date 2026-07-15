@@ -1,6 +1,6 @@
 {
   "name": "asteroid-rocket-rush",
-  "version": "0.26.0",
+  "version": "0.27.0",
   "private": true,
   "description": "Rocket Rush — serverless leaderboard function deps. The game itself (index.html) has no build step; this file exists only so Netlify installs the leaderboard function's dependency.",
   "dependencies": {
