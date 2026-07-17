@@ -8,3 +8,13 @@
 
 [functions]
   node_bundler = "esbuild"
+
+# v0.28.0 — Play Store Phase C. Android's Digital Asset Links verifier is
+# strict: assetlinks.json MUST be served as application/json (a text/plain
+# or text/html content-type silently fails domain verification, leaving the
+# TWA with a browser URL bar). Netlify already infers this for .json, but
+# pinning it explicitly removes any doubt.
+[[headers]]
+  for = "/.well-known/assetlinks.json"
+  [headers.values]
+    Content-Type = "application/json"
