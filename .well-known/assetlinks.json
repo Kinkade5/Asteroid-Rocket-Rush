@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.astralgamer.rocketrush",
+      "sha256_cert_fingerprints": [
+        "34:63:3D:91:33:3E:93:D5:72:EC:21:A6:99:03:76:F8:C8:38:0C:53:7F:9F:BB:01:DF:92:28:38:55:47:C3:94"
+      ]
+    }
+  }
+]
