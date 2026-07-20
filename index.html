@@ -1586,7 +1586,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.28.2</div>
+    <div class="version-badge" id="versionBadge">v0.28.3</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1740,7 +1740,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.28.2';
+  const GAME_VERSION = 'v0.28.3';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -1856,11 +1856,31 @@
 
     function ready() { return ctx !== null; }
 
-    // v0.28.2 — whether the context exists AND the browser let it run.
-    // Distinguishes the installed-app autoplay exemption (context comes up
-    // 'running' with no gesture — the TWA case) from a plain browser tab
-    // (comes up 'suspended' until the first gesture).
-    function running() { return ctx !== null && ctx.state === 'running'; }
+    // v0.28.3 — launch-time music start, second attempt at the "music
+    // doesn't start until the screen is touched" report. v0.28.2 checked the
+    // context's state at creation and gave up on 'suspended', reasoning that
+    // resume() without a gesture is what the policy blocks. Field result:
+    // still silent in the TWA — Chrome can create the context suspended AT
+    // LOAD even where autoplay is permitted (installed app / high media
+    // engagement), so state-at-creation is not the real signal. resume() is:
+    //   - autoplay permitted → resolves immediately → music, no gesture;
+    //   - autoplay blocked   → Chrome parks the promise until the first
+    //     gesture, then resolves it — begin() is then a harmless no-op next
+    //     to ensureAudio()'s wake(), !musicRunning guards the double-start.
+    // Deliberately NOT setting resumePending: that flag whitelists SFX during
+    // a gesture-driven resume, but an eager resume can stay parked for the
+    // whole pre-gesture stretch — and stale toast SFX piling up on the
+    // frozen clock is exactly what the tone()/noise() guard exists to stop.
+    // begin() re-checks document.hidden at resolve time so a late resolution
+    // can never start music over the launcher (preserves the v0.28.1 fix).
+    function eagerStart() {
+      if (!init()) return;
+      const begin = () => {
+        if (!document.hidden && settings.musicOn && !musicRunning) startMusic();
+      };
+      if (ctx.state === 'running') begin();
+      else ctx.resume().then(begin).catch(() => {});
+    }
 
     // ---- Low-level helpers ----
     function now() { return ctx.currentTime; }
@@ -2302,7 +2322,7 @@
 
     return {
       init, resume, ready,
-      running,            // v0.28.2 — eager-start probe
+      eagerStart,         // v0.28.3 — launch-time autoplay probe + music start
       play,
       startThrust, stopThrust,
       startMusic, stopMusic,
@@ -3951,22 +3971,13 @@
     }
   }
 
-  // v0.28.2 — eager music start (closed-testing bug report #2: "music doesn't
-  // start until the screen is touched"). Chrome's autoplay policy EXEMPTS
-  // installed web apps — a TWA or home-screen PWA may start audio with no
-  // gesture — but the game never tried: init() only ever ran inside input
-  // handlers. So try at load. If the context comes up 'running', the
-  // exemption applies (the Play-Store app) — start the music. If it comes up
-  // 'suspended' (plain browser tab, policy enforced), do nothing: the
-  // first-gesture ensureAudio() → wake() path takes over exactly as before.
-  // Deliberately NOT calling resume() here — resuming without a gesture is
-  // precisely what the policy blocks, and the rejection would be pure noise.
+  // v0.28.3 — launch-time music. See Audio.eagerStart() for the full story
+  // (v0.28.2's state-at-creation check was the wrong probe; the parked
+  // resume() promise is the right one). In a plain tab this is equivalent
+  // to the old first-gesture behavior; in the installed app it brings the
+  // menu music up with no touch.
   window.addEventListener('load', () => {
-    if (document.hidden) return;  // backgrounded launch — pageshow/wake() covers it
-    if (Audio.ready()) return;    // a very fast first tap beat us to it
-    if (Audio.init() && Audio.running() && Audio.getSettings().musicOn) {
-      Audio.startMusic();
-    }
+    if (!Audio.ready()) Audio.eagerStart();  // a very fast first tap may beat us to it
   });
 
   // Thrust sound bookkeeping — mirror of the `thrusting` flag, so we only
