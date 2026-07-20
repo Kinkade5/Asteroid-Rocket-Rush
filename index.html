@@ -1586,7 +1586,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.28.1</div>
+    <div class="version-badge" id="versionBadge">v0.28.2</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1740,7 +1740,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.28.1';
+  const GAME_VERSION = 'v0.28.2';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -1787,6 +1787,12 @@
     let sfxGain = null;       // master gain for SFX
     let musicGain = null;     // master gain for music
     let thrustNodes = null;   // persistent thrust loop oscillators
+    // v0.28.2 — a ctx.resume() is in flight. The suspended-clock guard in
+    // tone()/noise() lets SFX through while this is set: on the FIRST tap,
+    // ensureAudio()'s wake() resumes asynchronously, so the same handler's
+    // click SFX still sees state 'suspended' — but its note lands the
+    // instant the resume resolves, which is exactly what the player expects.
+    let resumePending = false;
 
     // Music sequencer state
     let musicRunning = false;
@@ -1842,11 +1848,19 @@
     // Some browsers (iOS Safari) suspend the context — bump it awake.
     function resume() {
       if (ctx && ctx.state === 'suspended') {
-        ctx.resume().catch(() => {});
+        resumePending = true; // v0.28.2 — see declaration
+        ctx.resume().then(() => { resumePending = false; })
+                    .catch(() => { resumePending = false; });
       }
     }
 
     function ready() { return ctx !== null; }
+
+    // v0.28.2 — whether the context exists AND the browser let it run.
+    // Distinguishes the installed-app autoplay exemption (context comes up
+    // 'running' with no gesture — the TWA case) from a plain browser tab
+    // (comes up 'suspended' until the first gesture).
+    function running() { return ctx !== null && ctx.state === 'running'; }
 
     // ---- Low-level helpers ----
     function now() { return ctx.currentTime; }
@@ -1864,7 +1878,12 @@
 
     // Simple one-shot tone with AD envelope, pitch sweep, and waveform choice
     function tone({ freq, freqEnd = null, dur = 0.2, type = 'sine', gain = 0.25, attack = 0.005, delay = 0 }) {
-      if (!ctx) return;
+      // v0.28.2 — also bail while suspended. With eager init the context can
+      // exist pre-gesture (and post-v0.28.1, while backgrounded); notes
+      // scheduled on a halted clock would all fire, stale, at the next
+      // resume. A skipped SFX is correct; a delayed burst of them is not.
+      // Exception: a resume already in flight (see resumePending).
+      if (!ctx || (ctx.state !== 'running' && !resumePending)) return;
       const t0 = now() + delay;
       const osc = ctx.createOscillator();
       osc.type = type;
@@ -1883,7 +1902,8 @@
 
     // Filtered white noise burst — for explosions, debris, snare-like hits
     function noise({ dur = 0.3, gain = 0.3, filterFreq = 2000, filterQ = 1, delay = 0, sweepTo = null, type = 'lowpass' }) {
-      if (!ctx) return;
+      // v0.28.2 — same suspended-clock guard as tone(), see there.
+      if (!ctx || (ctx.state !== 'running' && !resumePending)) return;
       const t0 = now() + delay;
       const bufSize = Math.max(1, Math.floor(ctx.sampleRate * dur));
       const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
@@ -2241,7 +2261,9 @@
         if (settings.musicOn && !musicRunning) startMusic();
       };
       if (ctx.state === 'suspended') {
-        ctx.resume().then(restartMusic).catch(() => {});
+        resumePending = true; // v0.28.2 — see declaration
+        ctx.resume().then(() => { resumePending = false; restartMusic(); })
+                    .catch(() => { resumePending = false; });
       } else {
         restartMusic();
       }
@@ -2280,6 +2302,7 @@
 
     return {
       init, resume, ready,
+      running,            // v0.28.2 — eager-start probe
       play,
       startThrust, stopThrust,
       startMusic, stopMusic,
@@ -3927,6 +3950,24 @@
       Audio.wake();
     }
   }
+
+  // v0.28.2 — eager music start (closed-testing bug report #2: "music doesn't
+  // start until the screen is touched"). Chrome's autoplay policy EXEMPTS
+  // installed web apps — a TWA or home-screen PWA may start audio with no
+  // gesture — but the game never tried: init() only ever ran inside input
+  // handlers. So try at load. If the context comes up 'running', the
+  // exemption applies (the Play-Store app) — start the music. If it comes up
+  // 'suspended' (plain browser tab, policy enforced), do nothing: the
+  // first-gesture ensureAudio() → wake() path takes over exactly as before.
+  // Deliberately NOT calling resume() here — resuming without a gesture is
+  // precisely what the policy blocks, and the rejection would be pure noise.
+  window.addEventListener('load', () => {
+    if (document.hidden) return;  // backgrounded launch — pageshow/wake() covers it
+    if (Audio.ready()) return;    // a very fast first tap beat us to it
+    if (Audio.init() && Audio.running() && Audio.getSettings().musicOn) {
+      Audio.startMusic();
+    }
+  });
 
   // Thrust sound bookkeeping — mirror of the `thrusting` flag, so we only
   // call start/stop when the boolean actually flips. Setting `thrusting`
