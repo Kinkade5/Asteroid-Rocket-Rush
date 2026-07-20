@@ -1586,7 +1586,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.28.4</div>
+    <div class="version-badge" id="versionBadge">v0.28.5</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1740,7 +1740,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.28.4';
+  const GAME_VERSION = 'v0.28.5';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -3999,6 +3999,18 @@
   window.addEventListener('load', () => {
     if (!Audio.ready()) Audio.eagerStart();  // a very fast first tap may beat us to it
   });
+
+  // v0.28.5 — wake audio on the FIRST gesture, wherever it lands. On-device
+  // testing (v0.28.4 diagnostic badge) showed the context stuck 'suspended'
+  // through the first tap and only waking on the second, on a specific
+  // control. ensureAudio() was wired per-widget (~14 call sites) — a pattern
+  // that guarantees somebody gets missed. One document-level hook makes
+  // every gesture an audio unlock. Capture phase on purpose: several
+  // buttons stopPropagation(), which would starve a bubble listener.
+  // ensureAudio() is idempotent, so the per-widget calls stay as belt and
+  // braces. keydown too, for desktop parity (any key is a user activation).
+  document.addEventListener('pointerdown', () => { ensureAudio(); }, { capture: true, passive: true });
+  document.addEventListener('keydown', () => { ensureAudio(); }, { capture: true });
 
   // Thrust sound bookkeeping — mirror of the `thrusting` flag, so we only
   // call start/stop when the boolean actually flips. Setting `thrusting`
