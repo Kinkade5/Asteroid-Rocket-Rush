@@ -1586,7 +1586,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.28.3</div>
+    <div class="version-badge" id="versionBadge">v0.28.4</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1740,7 +1740,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.28.3';
+  const GAME_VERSION = 'v0.28.4';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -1855,6 +1855,17 @@
     }
 
     function ready() { return ctx !== null; }
+
+    // v0.28.4 — TEMPORARY diagnostic for the launch-music reports; remove
+    // when resolved. Context state + music-sequencer flag, rendered onto
+    // the version badge so a tester's phone can tell us what Chrome
+    // actually decided instead of us guessing a fourth time.
+    //   "none"      — context not created yet
+    //   "suspended" — created, clock halted (autoplay blocked or parked)
+    //   "running"   — clock live; ♪ = sequencer scheduling beats
+    function debugState() {
+      return (ctx ? ctx.state : 'none') + (musicRunning ? ' ♪' : '');
+    }
 
     // v0.28.3 — launch-time music start, second attempt at the "music
     // doesn't start until the screen is touched" report. v0.28.2 checked the
@@ -2323,6 +2334,7 @@
     return {
       init, resume, ready,
       eagerStart,         // v0.28.3 — launch-time autoplay probe + music start
+      debugState,         // v0.28.4 — TEMPORARY badge diagnostic
       play,
       startThrust, stopThrust,
       startMusic, stopMusic,
@@ -2496,6 +2508,14 @@
 
   // Render version from the single source of truth (GAME_VERSION above)
   if (versionBadge) versionBadge.textContent = GAME_VERSION;
+  // v0.28.4 — TEMPORARY: tick the live audio state onto the badge (see
+  // Audio.debugState()). One text node every 500ms — negligible. Remove
+  // together with debugState() once the launch-music mystery is closed.
+  if (versionBadge) {
+    setInterval(() => {
+      versionBadge.textContent = GAME_VERSION + ' · ' + Audio.debugState();
+    }, 500);
+  }
 
   // Logical resolution
   let W = 360, H = 600;
