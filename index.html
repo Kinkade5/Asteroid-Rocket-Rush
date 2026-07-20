@@ -1586,7 +1586,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.28.5</div>
+    <div class="version-badge" id="versionBadge">v0.28.6</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1740,7 +1740,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.28.5';
+  const GAME_VERSION = 'v0.28.6';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -1867,30 +1867,25 @@
       return (ctx ? ctx.state : 'none') + (musicRunning ? ' ♪' : '');
     }
 
-    // v0.28.3 — launch-time music start, second attempt at the "music
-    // doesn't start until the screen is touched" report. v0.28.2 checked the
-    // context's state at creation and gave up on 'suspended', reasoning that
-    // resume() without a gesture is what the policy blocks. Field result:
-    // still silent in the TWA — Chrome can create the context suspended AT
-    // LOAD even where autoplay is permitted (installed app / high media
-    // engagement), so state-at-creation is not the real signal. resume() is:
-    //   - autoplay permitted → resolves immediately → music, no gesture;
-    //   - autoplay blocked   → Chrome parks the promise until the first
-    //     gesture, then resolves it — begin() is then a harmless no-op next
-    //     to ensureAudio()'s wake(), !musicRunning guards the double-start.
-    // Deliberately NOT setting resumePending: that flag whitelists SFX during
-    // a gesture-driven resume, but an eager resume can stay parked for the
-    // whole pre-gesture stretch — and stale toast SFX piling up on the
-    // frozen clock is exactly what the tone()/noise() guard exists to stop.
-    // begin() re-checks document.hidden at resolve time so a late resolution
-    // can never start music over the launcher (preserves the v0.28.1 fix).
+    // v0.28.6 — launch-time music, final form. Only starts music if the
+    // context comes up 'running' at load, i.e. autoplay is genuinely
+    // permitted (some devices/testers). Under a blocked policy it does
+    // NOTHING and hands off to the first-gesture path.
+    //
+    // The v0.28.3–v0.28.5 arc: v0.28.3 called ctx.resume() here even when
+    // suspended, reasoning Chrome would "park" the promise and resolve it on
+    // the first gesture. On-device (v0.28.4 badge) that turned out to be the
+    // TWO-TAP BUG: the parked promise consumes the first user gesture without
+    // transitioning the context (it was created outside any activation), so
+    // only the SECOND tap's fresh resume() actually starts audio. Removing
+    // the eager resume() means the first tap's wake() is the first and only
+    // resume(), and it unlocks cleanly. Rule learned: never call resume()
+    // outside a user gesture — a parked resume is worse than no resume.
     function eagerStart() {
       if (!init()) return;
-      const begin = () => {
-        if (!document.hidden && settings.musicOn && !musicRunning) startMusic();
-      };
-      if (ctx.state === 'running') begin();
-      else ctx.resume().then(begin).catch(() => {});
+      if (ctx.state === 'running' && !document.hidden && settings.musicOn && !musicRunning) {
+        startMusic();
+      }
     }
 
     // ---- Low-level helpers ----
@@ -5418,8 +5413,15 @@
   // tear down a TWA without a visibilitychange, and bfcache restores fire
   // pageshow rather than visibilitychange, so mirror the lifecycle here too.
   window.addEventListener('pagehide', () => { Audio.suspendAll(); });
-  window.addEventListener('pageshow', () => {
-    if (!document.hidden) Audio.wake();
+  // v0.28.6 — gate on e.persisted (bfcache restore only). pageshow ALSO
+  // fires on the very first page load, AFTER the load handler has created
+  // the context via eagerStart() — so the un-gated wake() here was calling
+  // ctx.resume() with no user gesture on every cold start, parking a promise
+  // that consumed the first tap. THIS was the real two-tap culprit (the
+  // eagerStart resume() was only half of it). A genuine bfcache restore
+  // (persisted === true) is a real return-to-app and does need the wake.
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted && !document.hidden) Audio.wake();
   });
 
   // Esc mirrors the Android back button for desktop players.
