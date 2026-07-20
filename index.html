@@ -1586,7 +1586,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.28.0</div>
+    <div class="version-badge" id="versionBadge">v0.28.1</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1740,7 +1740,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.28.0';
+  const GAME_VERSION = 'v0.28.1';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -2210,6 +2210,43 @@
       }
     }
 
+    // v0.28.1 — park the whole audio graph when the app goes to the
+    // background. Closed-testing bug report: backgrounding or closing the
+    // Android app left the music playing over the launcher.
+    //
+    // Nothing used to touch audio on hide. Three things kept it alive:
+    //   1. the music scheduler's setTimeout kept queueing beats,
+    //   2. up to `lookAhead` (500ms) of beats were ALREADY scheduled on the
+    //      audio clock, so clearing the timer alone can't silence them, and
+    //   3. the thrust drone is a persistent oscillator stopped by
+    //      syncThrustSound() from the update loop — but rAF is frozen while
+    //      hidden, so clearing `thrusting` never actually reached the node.
+    //
+    // Suspending the AudioContext is the one operation that covers all
+    // three: it halts the clock, so queued notes never sound.
+    function suspendAll() {
+      if (!ctx) return;
+      stopMusic();
+      stopThrust();
+      if (ctx.state === 'running') ctx.suspend().catch(() => {});
+    }
+
+    // Counterpart to suspendAll(). Restarts the sequencer from beat 0 —
+    // the loop is ambient, so there's no musical seam worth preserving
+    // across a backgrounding. Restart is chained off resume() so the
+    // scheduler never reads a frozen currentTime.
+    function wake() {
+      if (!ctx) return;
+      const restartMusic = () => {
+        if (settings.musicOn && !musicRunning) startMusic();
+      };
+      if (ctx.state === 'suspended') {
+        ctx.resume().then(restartMusic).catch(() => {});
+      } else {
+        restartMusic();
+      }
+    }
+
     // ============== PUBLIC API ==============
     function setSfxOn(on) {
       settings.sfxOn = on;
@@ -2246,6 +2283,7 @@
       play,
       startThrust, stopThrust,
       startMusic, stopMusic,
+      suspendAll, wake,   // v0.28.1 — background/foreground audio lifecycle
       setSfxOn, setMusicOn,
       getSettings, isMuted, toggleMuteAll,
     };
@@ -3881,7 +3919,12 @@
       const ok = Audio.init();
       if (ok && Audio.getSettings().musicOn) Audio.startMusic();
     } else {
-      Audio.resume();
+      // v0.28.1 — wake() rather than resume(): after a backgrounding the
+      // context is suspended AND the music sequencer is stopped, so a bare
+      // resume() would come back silent. Browsers may also refuse to resume
+      // outside a user gesture, which makes this gesture-driven path the
+      // reliable place to recover. Idempotent — no-op when already running.
+      Audio.wake();
     }
   }
 
@@ -5272,8 +5315,27 @@
   // Auto-pause when the app/tab is hidden mid-run (phone call, app switch,
   // screen lock). rAF stops while hidden anyway; this makes the freeze
   // explicit and gives a deliberate RESUME beat on return.
+  //
+  // v0.28.1 — also park the audio graph, in BOTH directions and from any
+  // state. The pause branch only fires from STATE.PLAY, so backgrounding
+  // from the menu or the game-over screen used to leave the music running
+  // over the launcher (reported by a closed tester). Audio.suspendAll() is
+  // state-independent on purpose — nothing should ever outlive the app.
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden && state === STATE.PLAY) pauseGame();
+    if (document.hidden) {
+      if (state === STATE.PLAY) pauseGame();
+      Audio.suspendAll();
+    } else {
+      Audio.wake();
+    }
+  });
+
+  // v0.28.1 — belt-and-braces for a genuine close/swipe-away. Android can
+  // tear down a TWA without a visibilitychange, and bfcache restores fire
+  // pageshow rather than visibilitychange, so mirror the lifecycle here too.
+  window.addEventListener('pagehide', () => { Audio.suspendAll(); });
+  window.addEventListener('pageshow', () => {
+    if (!document.hidden) Audio.wake();
   });
 
   // Esc mirrors the Android back button for desktop players.
