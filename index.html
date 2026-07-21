@@ -999,6 +999,31 @@
     background: rgba(106, 240, 255, 0.1);
     color: #6af0ff;
   }
+  /* === v0.29.0 — Respec (per-line 50% refund) === */
+  /* Slim full-width bar under the card content. Deliberately muted next to
+     the gold buy button; arming flips it to warning amber so the
+     destructive step never reads as a routine purchase. */
+  .upgrade-refund {
+    grid-column: 1 / -1;
+    margin-top: 2px;
+    padding: 7px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    letter-spacing: 1px;
+    border-radius: 8px;
+    border: 1px solid rgba(154, 163, 214, 0.35);
+    background: rgba(154, 163, 214, 0.08);
+    color: #9aa3d6;
+    cursor: pointer;
+    transition: transform 0.1s, background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .upgrade-refund:active { transform: scale(0.97); }
+  .upgrade-refund.armed {
+    border-color: rgba(255, 170, 80, 0.6);
+    background: rgba(255, 170, 80, 0.12);
+    color: #ffaa50;
+  }
   /* === v0.23.0 — MASTER tab (Star-bought capstones) === */
   /* Violet accents to match the MASTER tab + Stars currency. Owned cards
      dim slightly and show a violet OWNED chip; unaffordable/locked follow
@@ -1586,7 +1611,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.28.7</div>
+    <div class="version-badge" id="versionBadge">v0.29.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1740,7 +1765,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.28.7';
+  const GAME_VERSION = 'v0.29.0';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -4654,6 +4679,12 @@
       markUpgradeAffordableSeen(def);
     }
 
+    // v0.29.0 — Respec: any line above Tier 0 offers a 50% refund. The
+    // two-step confirm lives in the wiring (armed state), not the markup.
+    const refundHtml = currentTier > 0
+      ? `<button class="upgrade-refund" data-refund="${def.id}">↩ REFUND +${refundValue(def).toLocaleString()}</button>`
+      : '';
+
     return `
         <div class="upgrade-card">
           ${newBadgeHtml}
@@ -4664,6 +4695,7 @@
           <div class="upgrade-desc">${def.desc}</div>
           ${valuesRow}
           ${btnHtml}
+          ${refundHtml}
         </div>`;
   }
 
@@ -4679,6 +4711,31 @@
         e.preventDefault();
         const id = btn.getAttribute('data-upgrade');
         attemptPurchase(id);
+      });
+    });
+    // v0.29.0 — refund buttons: two-step confirm. First tap arms the
+    // button (amber + explicit consequence label) for 2.5s; a second tap
+    // while armed executes. Every re-render rebuilds these nodes, so the
+    // armed state can never go stale across a purchase or view switch.
+    containerEl.querySelectorAll('.upgrade-refund[data-refund]').forEach(btn => {
+      let disarmTimer = null;
+      btn.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const id = btn.getAttribute('data-refund');
+        if (!btn.classList.contains('armed')) {
+          Audio.play.uiClick();
+          btn.classList.add('armed');
+          btn.textContent = 'SURE? RESETS TO TIER 0';
+          disarmTimer = setTimeout(() => {
+            btn.classList.remove('armed');
+            const def = UPGRADE_DEFS.find(d => d.id === id);
+            if (def) btn.textContent = `↩ REFUND +${refundValue(def).toLocaleString()}`;
+          }, 2500);
+          return;
+        }
+        clearTimeout(disarmTimer);
+        attemptRefund(id);
       });
     });
   }
@@ -4857,6 +4914,38 @@
     // v0.16.0 — if this purchase completed the collection, fire the
     // SHOP MAXED! celebration toast (one-time, guarded internally).
     checkShopMaxedCelebration();
+  }
+
+  // === v0.29.0 — Respec: per-line refund at 50% ===
+  // Refund value for a line at its CURRENT tier: half of every coin spent
+  // climbing to it (per the def's own cost table), floored. Tier 0 → 0.
+  function refundValue(def) {
+    const tier = upgrades[def.line][def.stat];
+    const costs = def.costTable || UPGRADE_COSTS;
+    let spent = 0;
+    for (let t = 1; t <= tier; t++) spent += costs[t];
+    return Math.floor(spent / 2);
+  }
+
+  // Reset one upgrade line to Tier 0 and bank the 50% refund. Deliberately
+  // does NOT touch lifetimeCoins (monotonic by contract) or the NEW!-badge
+  // seen state (it's a monotonic max, so a refunded line won't re-spam
+  // badges on the way back up). Full Autopilot interplay: refunding
+  // Guidance below T3 leaves the capstone owned but inert —
+  // GUIDANCE_STRENGTH[0] is 0, so the autopilot multiplier has nothing to
+  // amplify. The Master-shop gate only ever guarded *purchase*.
+  function attemptRefund(upgradeId) {
+    const def = UPGRADE_DEFS.find(d => d.id === upgradeId);
+    if (!def) return;
+    if (upgrades[def.line][def.stat] <= 0) return;
+    const refund = refundValue(def);
+    upgrades[def.line][def.stat] = 0;
+    bankedCoins += refund;
+    saveUpgrades();
+    saveBankedCoins();
+    Audio.play.uiBack();
+    if (navigator.vibrate) navigator.vibrate(15);
+    refreshShopView();
   }
 
   shopBtn.addEventListener('pointerdown', (e) => {
