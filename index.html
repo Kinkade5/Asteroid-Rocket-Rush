@@ -1071,6 +1071,16 @@
   .filter-card { align-items: center; }
   .filter-card .upgrade-label { display: flex; align-items: center; gap: 8px; }
   .filter-glyph { font-size: 16px; }
+  /* v0.32.0 — running price line under a filter row. Muted by default;
+     amber when the wallet can't cover the flip, so a dead switch always
+     explains itself rather than just not responding. */
+  .filter-price {
+    font-size: 11px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    letter-spacing: 0.5px;
+    color: #7d85ad;
+  }
+  .filter-price.unaffordable { color: #ffaa50; }
   /* === v0.23.0 — MASTER tab (Star-bought capstones) === */
   /* Violet accents to match the MASTER tab + Stars currency. Owned cards
      dim slightly and show a violet OWNED chip; unaffordable/locked follow
@@ -1658,7 +1668,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.31.0</div>
+    <div class="version-badge" id="versionBadge">v0.32.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1812,7 +1822,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.31.0';
+  const GAME_VERSION = 'v0.32.0';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -3438,9 +3448,73 @@
     try { localStorage.setItem('rocketRushPowerupFilters', JSON.stringify(powerupFilters)); } catch (_) {}
   }
   function isPowerupAllowed(type) { return powerupFilters[type] === true; }
+  // ======================================================================
+  // v0.32.0 — PAID POWERUP FILTERS
+  // ======================================================================
+  // The filters shipped free in v0.30.0, but they're stronger than they
+  // look: because spawnPowerup() renormalizes after removing a type,
+  // switching three types off concentrates ~100% of spawns onto the fourth.
+  // "Disable everything except 2x" is a real, permanent buff — so it needs
+  // a price.
+  //
+  // Two-stage economy, per type:
+  //   1. FILTER_UNLOCK_STARS (1✦, once) — buys the switch for that type.
+  //   2. FILTER_TOGGLE_COST (5,000 coins) — charged on EVERY flip after
+  //      that, in both directions. Symmetric on purpose: free re-enabling
+  //      would make it a rental rather than a decision, and let a player
+  //      re-tune the spawn table between every run at no cost.
+  // Stars are the scarce currency (25k lifetime + Master milestones), so
+  // the unlock is the real gate; coins are the ongoing brake.
+  const FILTER_UNLOCK_STARS = 1;
+  const FILTER_TOGGLE_COST  = 5000;
+
+  const DEFAULT_FILTER_UNLOCKED = {
+    shield: false, slowmo: false, magnet: false, double: false,
+  };
+  let filterUnlocked = loadFilterUnlocked();
+  function loadFilterUnlocked() {
+    try {
+      const raw = localStorage.getItem('rocketRushFilterUnlocked');
+      if (!raw) return { ...DEFAULT_FILTER_UNLOCKED };
+      const parsed = JSON.parse(raw);
+      const result = { ...DEFAULT_FILTER_UNLOCKED };
+      for (const id in result) {
+        if (typeof parsed[id] === 'boolean') result[id] = parsed[id];
+      }
+      return result;
+    } catch (_) {
+      return { ...DEFAULT_FILTER_UNLOCKED };
+    }
+  }
+  function saveFilterUnlocked() {
+    try { localStorage.setItem('rocketRushFilterUnlocked', JSON.stringify(filterUnlocked)); } catch (_) {}
+  }
+  function isFilterUnlocked(type) { return filterUnlocked[type] === true; }
+
+  // Stage 1 — spend 1✦ to buy the switch for one powerup type.
+  function attemptFilterUnlock(type) {
+    if (!(type in powerupFilters)) return;
+    if (isFilterUnlocked(type)) return;
+    if (bankedStars < FILTER_UNLOCK_STARS) return;
+    bankedStars -= FILTER_UNLOCK_STARS;
+    filterUnlocked[type] = true;
+    saveBankedStars();
+    saveFilterUnlocked();
+    Audio.play.coinGold();
+    if (navigator.vibrate) navigator.vibrate(20);
+    refreshShopView();
+  }
+
+  // Stage 2 — flip an unlocked switch for FILTER_TOGGLE_COST coins.
+  // Silently no-ops when locked or unaffordable; the card renders those
+  // states explicitly so the player already knows why nothing happened.
   function togglePowerupFilter(type) {
     if (!(type in powerupFilters)) return;
+    if (!isFilterUnlocked(type)) return;
+    if (bankedCoins < FILTER_TOGGLE_COST) return;
+    bankedCoins -= FILTER_TOGGLE_COST;
     powerupFilters[type] = !powerupFilters[type];
+    saveBankedCoins();
     savePowerupFilters();
     Audio.play.uiClick();
     if (navigator.vibrate) navigator.vibrate(12);
@@ -5045,15 +5119,35 @@
     { id: 'magnet', glyph: '🧲', label: 'Magnet',     desc: 'Pulls nearby coins in' },
     { id: 'double', glyph: '✖',  label: 'Multiplier', desc: 'Multiplies score while active' },
   ];
+  // v0.32.0 — two-stage card. Locked: a ✦ buy button (stage 1). Unlocked:
+  // the switch plus a running "5,000 to flip" price line, dimmed when the
+  // wallet can't cover it — the player should never tap a switch and get
+  // silence with no explanation.
   function buildPowerupFilterHtml(def) {
     const on = isPowerupAllowed(def.id);
+    const unlocked = isFilterUnlocked(def.id);
+    const canAffordUnlock = bankedStars >= FILTER_UNLOCK_STARS;
+    const canAffordFlip = bankedCoins >= FILTER_TOGGLE_COST;
+
+    if (!unlocked) {
+      return `
+        <div class="upgrade-card master filter-card">
+          <div class="upgrade-header">
+            <div class="upgrade-label"><span class="filter-glyph">${def.glyph}</span>${def.label}</div>
+          </div>
+          <div class="upgrade-desc">${def.desc}</div>
+          <div class="upgrade-values filter-price">🔒 Unlock the switch to control spawns</div>
+          <button class="upgrade-buy master" data-filter-unlock="${def.id}"${canAffordUnlock ? '' : ' disabled'}>✦ ${FILTER_UNLOCK_STARS}</button>
+        </div>`;
+    }
     return `
         <div class="upgrade-card master filter-card">
           <div class="upgrade-header">
             <div class="upgrade-label"><span class="filter-glyph">${def.glyph}</span>${def.label}</div>
           </div>
           <div class="upgrade-desc">${on ? def.desc : 'Will not spawn'}</div>
-          <button class="toggle-switch${on ? ' on' : ''}" data-powerup-toggle="${def.id}"
+          <div class="upgrade-values filter-price${canAffordFlip ? '' : ' unaffordable'}">${FILTER_TOGGLE_COST.toLocaleString()} coins to flip</div>
+          <button class="toggle-switch${on ? ' on' : ''}${canAffordFlip ? '' : ' locked'}" data-powerup-toggle="${def.id}"
                   role="switch" aria-checked="${on}" aria-label="${def.label} spawns"></button>
         </div>`;
   }
@@ -5133,6 +5227,15 @@
         e.stopPropagation();
         e.preventDefault();
         togglePowerupFilter(btn.getAttribute('data-powerup-toggle'));
+      });
+    });
+    // v0.32.0 — stage-1 ✦ unlock buttons for the powerup filters.
+    shopMasterListEl.querySelectorAll('.upgrade-buy[data-filter-unlock]').forEach(btn => {
+      btn.addEventListener('pointerdown', (e) => {
+        if (btn.disabled) return;
+        e.stopPropagation();
+        e.preventDefault();
+        attemptFilterUnlock(btn.getAttribute('data-filter-unlock'));
       });
     });
     // Wire ✦ buy buttons → attemptMasterPurchase (stars currency).
