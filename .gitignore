@@ -4,3 +4,6 @@ node_modules/
 
 # Netlify CLI local state
 .netlify/
+
+# Claude Code session state and git worktrees — machine-local, never shared.
+.claude/
