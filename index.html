@@ -102,6 +102,44 @@
     z-index: 5;
   }
   .countdown-overlay.active { opacity: 1; }
+  /* === v0.34.0 — tap-to-start prompt === */
+  /* Same overlay geometry and z-index as the countdown it precedes, and
+     equally non-interactive: the tap has to reach the canvas handler that
+     advances READY → COUNTDOWN. Breathing animation rather than a hard
+     blink, so it reads as "waiting for you" without nagging. Reduce Motion
+     softens it — see the body.reduced-motion rule further down. */
+  .ready-prompt {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    z-index: 5;
+  }
+  .ready-prompt.active { opacity: 1; }
+  .ready-prompt-main {
+    font-size: clamp(26px, 8vw, 42px);
+    font-weight: 800;
+    letter-spacing: 3px;
+    color: #fff;
+    text-shadow: 0 0 32px rgba(106, 240, 255, 0.55), 0 4px 12px rgba(0,0,0,0.6);
+    animation: readyPulse 1.6s ease-in-out infinite;
+  }
+  .ready-prompt-sub {
+    font-size: clamp(11px, 3.2vw, 14px);
+    letter-spacing: 2px;
+    color: #8a93c0;
+    text-transform: uppercase;
+  }
+  @keyframes readyPulse {
+    0%, 100% { opacity: 0.72; transform: scale(1); }
+    50%      { opacity: 1;    transform: scale(1.045); }
+  }
   .countdown-number {
     font-size: clamp(64px, 22vw, 120px);
     font-weight: 800;
@@ -1569,6 +1607,17 @@
   /* Expiring-powerup badge — the default is a sharp 3-flash strobe every
      500ms. Too intense for motion-sensitive users. Swap to a slow, gentle
      opacity pulse — same "your buff is about to expire" signal, no strobe. */
+  /* v0.34.0 — tap-to-start prompt. The affordance is "the game is waiting
+     on you", carried by the opacity breathing; the scale pulse is the part
+     that reads as motion. Keep the former, drop the latter, slow it down. */
+  body.reduced-motion .ready-prompt-main {
+    animation: readyPulseGentle 2.4s ease-in-out infinite;
+  }
+  @keyframes readyPulseGentle {
+    0%, 100% { opacity: 0.8; }
+    50%      { opacity: 1; }
+  }
+
   body.reduced-motion .pu-badge.expiring {
     animation: pu-expiring-gentle 1.4s ease-in-out infinite;
   }
@@ -1668,7 +1717,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.33.0</div>
+    <div class="version-badge" id="versionBadge">v0.34.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1719,6 +1768,13 @@
        Shown for every run start AND retry; see runCountdown() in JS. -->
   <div id="countdownOverlay" class="countdown-overlay">
     <div class="countdown-number" id="countdownNumber">3</div>
+  </div>
+  <!-- Tap-to-start gate (v0.34.0) — shown in STATE.READY, before the
+       countdown. Non-interactive like the countdown overlay so the tap
+       falls through to the canvas handler that advances the state. -->
+  <div id="readyPrompt" class="ready-prompt">
+    <div class="ready-prompt-main">TAP TO START</div>
+    <div class="ready-prompt-sub">Hold to thrust</div>
   </div>
   <!-- Multiplier milestone popup (v0.22.0) — center-screen 5×/10× callout.
        Non-interactive; see checkMultiplierMilestone() / showMultiplierPopup(). -->
@@ -1822,7 +1878,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.33.0';
+  const GAME_VERSION = 'v0.34.0';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -2506,6 +2562,7 @@
   const startScreen = document.getElementById('startScreen');
   const gameOverScreen = document.getElementById('gameOverScreen');
   const countdownOverlay = document.getElementById('countdownOverlay');
+  const readyPromptEl = document.getElementById('readyPrompt'); // v0.34.0
   const countdownNumberEl = document.getElementById('countdownNumber');
   const multInnerEl = document.getElementById('multInner'); // v0.22.0 — multiplier popup
   const multNumEl = document.getElementById('multNum');
@@ -2611,7 +2668,12 @@
   // its OWN loop() branch that runs no logic at all — the world must stay
   // exactly where it froze (the idle-float branch would teleport the rocket
   // back to center, potentially into an asteroid on resume).
-  const STATE = { MENU: 0, PLAY: 1, DEAD: 2, COUNTDOWN: 3, PAUSED: 4 };
+  // v0.34.0 — READY added: the tap-to-start gate that now sits in front of
+  // COUNTDOWN. startGame() lands here instead of firing 3-2-1 immediately,
+  // and the player's own tap advances READY → COUNTDOWN → PLAY. Behaves
+  // exactly like COUNTDOWN everywhere else (idle float, HUD visible, no
+  // physics or spawning) — loop()'s trailing else branch covers both.
+  const STATE = { MENU: 0, PLAY: 1, DEAD: 2, COUNTDOWN: 3, PAUSED: 4, READY: 5 };
   let state = STATE.MENU;
 
   // Best scores are now tracked per-tier (see bestScoreByTier /
@@ -4439,6 +4501,13 @@
       try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
     }
 
+    // v0.34.0 — tap-to-start. In READY this tap is what begins the 3-2-1.
+    // Deliberately falls through to `thrusting = true` below rather than
+    // returning: holding from this tap through the countdown means thrust
+    // is live the instant PLAY begins, which is the same contract the
+    // countdown already had.
+    if (state === STATE.READY) beginCountdown();
+
     // Always flip thrusting on. It's safe in any state — the update loop only
     // applies thrust force when state === PLAY, so this is a no-op in menu/dead.
     // The important thing is that if the user is HOLDING through a state change
@@ -4473,6 +4542,11 @@
     if (performance.now() < inputLockUntil) return;
     ensureAudio();
     touchHandled = true;
+    // v0.34.0 — tap-to-start must be handled here too, not only in
+    // handlePointerDown: `touchHandled` makes the synthetic pointerdown
+    // bail, so on the game's primary platform this is the ONLY handler
+    // that sees the starting tap.
+    if (state === STATE.READY) beginCountdown();
     thrusting = true;
     // Clear the flag after a bit so a later pointerdown (e.g. from a mouse
     // plugged in) isn't permanently ignored.
@@ -4512,6 +4586,12 @@
         thrusting = true;
         return;
       }
+      // v0.34.0 — keyboard parity for tap-to-start. Note this needs a
+      // second press rather than the one that opened the gate: the MENU/
+      // DEAD branch above returns, and OS key-repeat is filtered, so
+      // holding Space from the menu will not auto-start the run. That's
+      // the intended reading of "tap to start".
+      if (state === STATE.READY) beginCountdown();
       keyHeld = true;
       thrusting = true;
     }
@@ -5763,6 +5843,11 @@
   function cancelCountdown() {
     countdownGen++;
     countdownOverlay.classList.remove('active');
+    // v0.34.0 — clear the tap-to-start prompt too. Every abandon path
+    // (back button, QUIT) routes through here, and a run can now be
+    // abandoned from READY before the countdown ever starts, which would
+    // otherwise leave the prompt burned over the menu.
+    readyPromptEl.classList.remove('active');
   }
 
   function runCountdown(onComplete) {
@@ -5803,13 +5888,25 @@
 
   function startGame() {
     reset();
-    // Hold in COUNTDOWN (not PLAY) until the "3-2-1-GO" beat finishes.
-    // Physics/spawning stay off — see loop()'s state gate — while the
-    // rocket idle-floats and backdrop drifts exactly like the menu.
-    // Thrust input is still captured (handlePointerDown sets `thrusting`
-    // in any state); holding through the countdown means thrust is
-    // already live the instant PLAY begins.
-    state = STATE.COUNTDOWN;
+    // v0.34.0 — hold in READY, not COUNTDOWN. The 3-2-1 beat no longer
+    // fires off the LAUNCH/RETRY press; the player's own tap starts it
+    // (beginCountdown below). Rationale: LAUNCH and RETRY are menu buttons,
+    // so the countdown used to begin while the finger was still travelling
+    // back to the play area — the beat was partly spent repositioning
+    // rather than preparing. Both paths funnel through here, so run start
+    // and retry get the gate identically.
+    //
+    // Physics/spawning stay off in READY exactly as in COUNTDOWN (loop()'s
+    // trailing else branch handles both), so the rocket idle-floats and the
+    // backdrop drifts just like the menu.
+    state = STATE.READY;
+    readyPromptEl.classList.add('active');
+    // Brief input lock so the gesture that pressed LAUNCH/RETRY cannot also
+    // satisfy the gate it just opened. Reuses the existing post-death lock
+    // mechanism, which both handlePointerDown and the keydown handler
+    // already respect. The buttons stopPropagation, so this is belt-and-
+    // braces against synthetic/duplicate events rather than the main guard.
+    inputLockUntil = performance.now() + 140;
     // v0.26.0 — starting a run re-arms the Android back trap (it can be
     // unarmed if the player just did a single back press at the menu).
     armBackTrap();
@@ -5826,6 +5923,16 @@
     refreshTierBadge();
     tierBadge.classList.remove('hud-hidden');
     updateHud();
+  }
+
+  // v0.34.0 — the second half of the old startGame(): everything from the
+  // 3-2-1 beat onward. Split out so the player's tap in STATE.READY drives
+  // it. Guarded on READY so a stray second tap during the countdown can't
+  // restart the beat (which would re-trigger the launch burst mid-run).
+  function beginCountdown() {
+    if (state !== STATE.READY) return;
+    state = STATE.COUNTDOWN;
+    readyPromptEl.classList.remove('active');
 
     runCountdown(() => {
       state = STATE.PLAY;
@@ -5865,6 +5972,10 @@
   function goToMenu() {
     state = STATE.MENU;
     thrusting = false;
+    // v0.34.0 — defence in depth. abandonRunToMenu() already clears this via
+    // cancelCountdown(), but every route to the menu should leave no prompt
+    // burned over it regardless of which state we came from.
+    readyPromptEl.classList.remove('active');
     hideOverlay(gameOverScreen);
     showOverlay(startScreen);
     // Hide the unlock toast if it's still visible from a Master unlock
@@ -5998,6 +6109,18 @@
     if (e.key !== 'Escape') return;
     if (state === STATE.PLAY) pauseGame();
     else if (state === STATE.PAUSED && !resuming) resumeGame();
+    // v0.34.0 — pre-run states now bail to the menu, matching what
+    // handleBackPress() already did for the Android back button (this
+    // handler claims to mirror it, so make that true).
+    //
+    // This became necessary rather than merely consistent: COUNTDOWN was
+    // always transient (~2.2s and gone), but READY waits indefinitely for
+    // the player's tap, so without this a desktop player who pressed
+    // LAUNCH by mistake has no keyboard route back to the menu.
+    else if (state === STATE.READY || state === STATE.COUNTDOWN) {
+      Audio.play.uiBack();
+      abandonRunToMenu();
+    }
   });
 
   // === Back button (history sentinel) ===
@@ -6044,7 +6167,9 @@
       abandonRunToMenu();
       return true;
     }
-    if (state === STATE.COUNTDOWN) {
+    // v0.34.0 — READY behaves like COUNTDOWN here: the run hasn't begun,
+    // so back exits straight to the menu with nothing to lose.
+    if (state === STATE.COUNTDOWN || state === STATE.READY) {
       // Run hasn't started — nothing to lose, straight back to menu.
       Audio.play.uiBack();
       abandonRunToMenu();
@@ -7345,7 +7470,9 @@
     // the countdown runs) instead of popping in only once PLAY begins.
     // v0.26.0 — include PAUSED so the HUD doesn't blink out under the
     // pause scrim.
-    if (state === STATE.PLAY || state === STATE.DEAD || state === STATE.COUNTDOWN || state === STATE.PAUSED) {
+    // v0.34.0 — include READY for the same reason COUNTDOWN is here: the
+    // HUD is already revealed by startGame(), so the pips must be too.
+    if (state === STATE.PLAY || state === STATE.DEAD || state === STATE.COUNTDOWN || state === STATE.PAUSED || state === STATE.READY) {
       const maxShields = getMaxShields();
       let pips = '';
       for (let i = 0; i < maxShields; i++) {
