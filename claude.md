@@ -1,7 +1,7 @@
 # Rocket Rush
 
 Flappy-style web game: dodge asteroid pairs, collect coins, grab powerups.
-Mobile-first, PWA-enabled. Currently at v0.33.0.
+Mobile-first, PWA-enabled. Currently at v0.34.0.
 Shipping on Google Play as a TWA (`com.astralgamer.rocketrush`) — in closed testing.
 
 Architecture note (v0.24.0): no longer purely single-file — the global
@@ -254,6 +254,49 @@ Inside `index.html`:
     Held for after launch: **skill tree** (restructures the whole shop and
     every save's upgrade layout — wrong thing to ship mid-closed-test),
     plus tap-to-start and a Master assist upgrade.
+23. **v0.34.0**: **Tap-to-start** — pulled off the held list above ahead of
+    the skill tree, because it doesn't share that feature's reason for
+    being held: no save migration, no economy change, no shop
+    restructuring, so it's safe to ship mid-closed-test.
+    - New `STATE.READY` sits between MENU/DEAD and COUNTDOWN. `startGame()`
+      now lands there and stops; the player's own tap calls the new
+      `beginCountdown()`, which holds everything from the 3-2-1 beat onward
+      (including the launch burst). Why: LAUNCH and RETRY are *menu
+      buttons*, so the countdown used to start while the finger was still
+      travelling back to the play area — the beat was partly spent
+      repositioning rather than preparing.
+    - READY behaves as COUNTDOWN everywhere else. loop()'s trailing `else`
+      already covers it (idle float, no physics/spawning), and it was added
+      to `renderPowerupBadges` and `handleBackPress` alongside COUNTDOWN.
+    - **Three input paths, not one.** `handlePointerDown` is not enough:
+      `touchstart` fires ~50-100ms earlier on mobile and sets `touchHandled`,
+      which makes the synthetic pointerdown bail — so on the game's primary
+      platform `touchstart` is the *only* handler that sees the starting
+      tap. Keyboard is the third. Missing the touch path would have shipped
+      a gate that silently never opens on Android.
+    - The start tap deliberately falls through to `thrusting = true` rather
+      than returning, preserving the existing contract that holding through
+      the countdown means thrust is live the instant PLAY begins.
+    - `inputLockUntil` gets a 140ms bump on entering READY so the gesture
+      that pressed LAUNCH/RETRY can't also satisfy the gate it just opened.
+      Reuses the existing post-death lock both input paths already respect.
+    - **Esc now abandons from READY/COUNTDOWN.** Esc claimed to "mirror the
+      Android back button" but only handled PLAY/PAUSED. That was harmless
+      while COUNTDOWN was transient (~2.2s); READY waits indefinitely, so a
+      desktop player who pressed LAUNCH by mistake had no keyboard way out.
+      `handleBackPress()` already did this — this makes Esc's claim true.
+    - Verified in a real browser: gate holds in READY, the same-tick tap is
+      swallowed by the input lock, a later tap runs 3→2→GO→PLAY, the
+      `touchstart` path advances the gate, Esc abandons cleanly (prompt
+      cleared, HUD hidden, menu restored) and the run is relaunchable.
+      RETRY shares `startGame()` via `bindStart`, so it's covered by
+      construction.
+    - **Note for future local testing**: `sw.js` is cache-first and only
+      invalidates on `CACHE_NAME`. Editing index.html without bumping it
+      leaves the service worker serving the *old* file — this cost real
+      debugging time here (a stale page made the gate look bypassed). Clear
+      it with `navigator.serviceWorker.getRegistrations()` +
+      `caches.keys()` deletes, or bump `CACHE_NAME` between test builds.
 
 Guidance tuning knobs in one block, all single-line edits:
 
