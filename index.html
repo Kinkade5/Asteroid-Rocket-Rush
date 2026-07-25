@@ -1668,7 +1668,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.32.0</div>
+    <div class="version-badge" id="versionBadge">v0.33.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1822,7 +1822,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.32.0';
+  const GAME_VERSION = 'v0.33.0';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -3010,7 +3010,13 @@
       desc: 'Platinum coins (2× gold) appear between asteroids, near the edges',
       valueTable: 'platinumChance',
       format: v => v === 0 ? 'Locked' : Math.round(v * 100) + '% per gap',
-      costTable: PLATINUM_COSTS },
+      costTable: PLATINUM_COSTS,
+      // v0.33.0 — gated behind the Multiplier line it shares a category
+      // with. Platinum is the payoff at the end of the MULTIPLIER path, not
+      // a standalone purchase you can rush past everything else: it doubles
+      // the best coin in the game, so it should read as the reward for
+      // committing to that category rather than a shortcut around it.
+      prereq: { line: 'double', stat: 'power', tier: 2, label: 'Multiplier Tier 2' } },
     // === Shield upgrades (Phase 1.5A) ===
     // `shield.hull` and `shield.overcharge` are paired stats — hull for
     // capacity, overcharge for iFrame duration. Each increments a separate
@@ -3176,11 +3182,22 @@
     } catch (_) {}
   }
 
+  // v0.33.0 — coin-shop prerequisites. Mirrors masterPrereqMet() (which
+  // gates Full Autopilot behind Guidance T3) but for the regular tiered
+  // shop, driven by an optional `prereq` field on the def. Upgrades without
+  // one always pass, so this is inert for the other 13 lines.
+  function upgradePrereqMet(def) {
+    if (!def.prereq) return true;
+    const p = def.prereq;
+    return upgrades[p.line][p.stat] >= p.tier;
+  }
+
   // Returns true if the upgrade's next-purchasable tier has become
   // affordable AND we haven't acknowledged it yet via a render.
   function isUpgradeNewlyAffordable(def) {
     const currentTier = upgrades[def.line][def.stat];
     if (currentTier >= MAX_UPGRADE_TIER) return false;
+    if (!upgradePrereqMet(def)) return false; // v0.33.0 — no NEW! on a locked card
     const costs = def.costTable || UPGRADE_COSTS;
     const nextCost = costs[currentTier + 1];
     if (bankedCoins < nextCost) return false;
@@ -3285,15 +3302,63 @@
   // Master score milestones — Stars earned per run on Master difficulty only.
   // Values are playtest guesses (see design doc). Per-run, no persistence:
   // recomputed from this run's score at gameOver. Ascending order required.
-  const MASTER_STAR_MILESTONES = [2500, 5000, 10000];
-  // Grants milestone stars for a completed run; returns count granted (0-3).
+  // v0.33.0 — REBALANCE. Through v0.32.0 this list was [2500, 5000, 10000]
+  // and paid out on EVERY qualifying run with no ledger, so any player who
+  // could clear 2,500 on Master farmed 1-3✦ per run forever. That made ✦
+  // effectively free and broke every price in the Master shop (capstones
+  // 1-10✦, skins 2-6✦, filter unlocks 1✦). The v0.23.0 spec did say "earned
+  // per run / no persistence needed" — the spec was the bug.
+  //
+  // Now: each milestone pays exactly ONCE, ever (ledger below), and the
+  // ladder runs much deeper so Master stays the primary ✦ path — the design
+  // intent — while every star is a genuine personal-best achievement rather
+  // than a farm. Total lifetime yield from Master: 7✦.
+  const MASTER_STAR_MILESTONES = [2500, 5000, 10000, 20000, 35000, 50000, 75000];
+
+  // Ledger of the highest milestone INDEX already paid out (-1 = none).
+  // An index rather than a set: milestones are ascending and clearing a
+  // high one implies the lower ones, so a single integer can't desync.
+  //
+  // Migration for existing saves: seed from the player's best Master score
+  // so everything at or below it counts as already claimed. Those stars
+  // were already paid — repeatedly — and re-granting them retroactively
+  // would hand the exact players who exploited the old behavior another
+  // windfall. Deliberately NOT a clawback either: banked ✦ is never taken
+  // back, however it was earned.
+  let masterMilestoneIdx = loadMasterMilestoneIdx();
+  function loadMasterMilestoneIdx() {
+    const raw = localStorage.getItem('rocketRushMasterMilestoneIdx');
+    if (raw !== null) {
+      const n = parseInt(raw);
+      if (!isNaN(n)) return n;
+    }
+    // No ledger yet — derive one from the existing best Master score.
+    const best = (bestScoreByTier && bestScoreByTier.master) || 0;
+    let idx = -1;
+    for (let i = 0; i < MASTER_STAR_MILESTONES.length; i++) {
+      if (best >= MASTER_STAR_MILESTONES[i]) idx = i;
+    }
+    try { localStorage.setItem('rocketRushMasterMilestoneIdx', String(idx)); } catch (_) {}
+    return idx;
+  }
+  function saveMasterMilestoneIdx() {
+    try { localStorage.setItem('rocketRushMasterMilestoneIdx', String(masterMilestoneIdx)); } catch (_) {}
+  }
+
+  // Grants any newly-cleared milestones for a completed run. Returns how
+  // many ✦ were granted this call (0 when the run beat nothing new).
   function grantMasterMilestoneStars(runScore, tierId) {
     if (tierId !== 'master') return 0;
-    let earned = 0;
-    for (const m of MASTER_STAR_MILESTONES) { if (runScore >= m) earned++; }
+    let highest = masterMilestoneIdx;
+    for (let i = 0; i < MASTER_STAR_MILESTONES.length; i++) {
+      if (runScore >= MASTER_STAR_MILESTONES[i]) highest = Math.max(highest, i);
+    }
+    const earned = highest - masterMilestoneIdx;
     if (earned <= 0) return 0;
+    masterMilestoneIdx = highest;
     bankedStars += earned;
     saveBankedStars();
+    saveMasterMilestoneIdx();
     return earned;
   }
 
@@ -3775,11 +3840,38 @@
   // the caller skips gameOver(). Effects: survive at 1 shield (floor
   // deaths keep existing shields — the floor kills regardless of shield
   // count, so the save should never feel like it *cost* shields),
-  // standard Overcharged-Shields iFrame window, and an upward rebirth
-  // kick. The kick matters most for floor deaths: the floor check has no
-  // iFrame, so without it the very next frame would re-trigger death
-  // with Phoenix already spent.
-  function attemptPhoenixSave() {
+  // standard Overcharged-Shields iFrame window, and a recovery that leaves
+  // the rocket controllable.
+  //
+  // v0.33.0 — the save no longer BOUNCES. It used to apply vy = -4.5 (the
+  // launch impulse is only -2.5), so being saved punted you upward hard,
+  // often straight into the asteroid above — a save that could immediately
+  // kill you, and disorienting in the moment you most need control. Now the
+  // rocket simply *catches* itself: vertical velocity is zeroed, no upward
+  // impulse at all.
+  //
+  // Floor deaths still need care. The floor check has no iFrame (the floor
+  // kills regardless of shields), and the caller has already clamped the
+  // rocket to rest exactly on it — so with vy = 0 gravity pushes it back
+  // through the kill line almost immediately, spending Phoenix for nothing.
+  //
+  // A positional lift can't solve this: at BASE_GRAVITY 0.52 px/frame²,
+  // even a 30px lift only buys ~180ms (measured), and buying a usable 0.8s
+  // would need a ~600px drop — taller than the play area. So floor saves
+  // get a short GRACE WINDOW instead, during which the floor is non-lethal
+  // and the rocket simply rests on it until the player thrusts. That's what
+  // the old -4.5 impulse was really approximating, minus the bounce.
+  //
+  // Deliberately a Phoenix-only timer rather than reusing shieldIFrameUntil:
+  // the floor is supposed to kill through shields, and widening that to all
+  // iFrames would quietly change every shield pop near the floor.
+  // v0.33.0 — floor-save recovery. A small lift so the rocket visibly
+  // leaves the kill line, plus a grace window during which the floor won't
+  // kill — the lift alone is worth <200ms against gravity (see above).
+  const PHOENIX_FLOOR_LIFT = 30;
+  const PHOENIX_FLOOR_GRACE_MS = 900;
+  let phoenixFloorGraceUntil = 0;
+  function attemptPhoenixSave(fromFloor = false) {
     if (!isCapstoneActive('phoenix_cell')) return false; // v0.30.0 — owner toggle
     if (phoenixUsedThisRun) return false;
     phoenixUsedThisRun = true;
@@ -3787,7 +3879,14 @@
     const iframeMs = getShieldIframeMs();
     shieldIFrameUntil = performance.now() + iframeMs;
     shieldPopEffect = 1;
-    rocket.vy = Math.min(rocket.vy, -4.5); // rebirth kick (launch is -2.5)
+    // v0.33.0 — catch, don't bounce. See the block comment above.
+    rocket.vy = 0;
+    if (fromFloor) {
+      // Lift clear of the kill line, then hold the floor harmless briefly
+      // so the player has a real window to thrust. See the block comment.
+      rocket.y = Math.min(rocket.y, BASE_H - rocket.r - PHOENIX_FLOOR_LIFT);
+      phoenixFloorGraceUntil = performance.now() + PHOENIX_FLOOR_GRACE_MS;
+    }
     shake = Math.max(shake, 14);
     // Orange/gold fire burst — reads "phoenix", distinct from the cyan
     // shield pop so the player knows the capstone (not a charge) saved them.
@@ -3930,6 +4029,7 @@
     shieldIFrameUntil = 0;
     shieldPopEffect = 0;
     phoenixUsedThisRun = false; // v0.22.0 — re-arm Phoenix Cell each run
+    phoenixFloorGraceUntil = 0; // v0.33.0 — never carry grace across runs
     multMilestoneShown = 0;     // v0.22.0 — re-arm multiplier popups each run
     focusTime = 0;
     focusTimeMax = 0;
@@ -4767,6 +4867,7 @@
       if (def.category !== catId) continue;
       const tier = upgrades[def.line][def.stat];
       if (tier >= MAX_UPGRADE_TIER) continue;
+      if (!upgradePrereqMet(def)) continue; // v0.33.0 — locked ≠ affordable
       const costs = def.costTable || UPGRADE_COSTS;
       if (bankedCoins >= costs[tier + 1]) return true;
     }
@@ -4954,16 +5055,25 @@
       pips += `<span class="upgrade-tier-pip${t <= currentTier ? ' filled' : ''}"></span>`;
     }
 
+    // v0.33.0 — prereq gate (currently only Platinum Extraction). Shown as
+    // LOCKED with the reason, same shape as the Master tab's prereq card,
+    // so an unbuyable upgrade always explains itself.
+    const prereqMet = upgradePrereqMet(def);
+
     let btnHtml;
     if (isMaxed) {
       btnHtml = `<button class="upgrade-buy maxed" disabled>MAXED</button>`;
+    } else if (!prereqMet) {
+      btnHtml = `<button class="upgrade-buy" disabled>LOCKED</button>`;
     } else {
       btnHtml = `<button class="upgrade-buy" data-upgrade="${def.id}"${canAfford ? '' : ' disabled'}>${cost.toLocaleString()}</button>`;
     }
 
     const valuesRow = isMaxed
       ? `<div class="upgrade-values">Max tier reached</div>`
-      : `<div class="upgrade-values">${currentVal}<span class="arrow">→</span><span class="next">${nextVal}</span></div>`;
+      : !prereqMet
+        ? `<div class="upgrade-values master-prereq">🔒 Requires ${def.prereq.label}</div>`
+        : `<div class="upgrade-values">${currentVal}<span class="arrow">→</span><span class="next">${nextVal}</span></div>`;
 
     // v0.16.0 — "NEW!" badge when this tier has become affordable for the
     // first time. Marking-as-seen on render means the badge shows on the
@@ -5286,6 +5396,7 @@
     if (!def) return;
     const currentTier = upgrades[def.line][def.stat];
     if (currentTier >= MAX_UPGRADE_TIER) return; // already maxed
+    if (!upgradePrereqMet(def)) return;          // v0.33.0 — prereq gate
     const nextTier = currentTier + 1;
     // Per-upgrade cost override (e.g. Reactive Shields uses REACTIVE_COSTS)
     // — otherwise use the shared default cost curve.
@@ -7072,7 +7183,12 @@
       // v0.22.0 — Phoenix Cell also intercepts floor deaths (design says
       // "any death source"). Its upward rebirth kick clears the rocket off
       // the floor so this check doesn't immediately re-fire next frame.
-      if (state === STATE.PLAY && !attemptPhoenixSave()) gameOver();
+      // v0.33.0 — during the post-Phoenix grace window the floor is
+      // non-lethal: the rocket rests on it while the player recovers.
+      // Checked before attemptPhoenixSave so the already-spent capstone
+      // isn't consulted again on every frame of contact.
+      if (state === STATE.PLAY && performance.now() >= phoenixFloorGraceUntil
+          && !attemptPhoenixSave(true)) gameOver();
     }
 
     // === Powerup pickups ===
