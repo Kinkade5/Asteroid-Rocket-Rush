@@ -1,7 +1,7 @@
 # Rocket Rush
 
 Flappy-style web game: dodge asteroid pairs, collect coins, grab powerups.
-Mobile-first, PWA-enabled. Currently at v0.34.0.
+Mobile-first, PWA-enabled. Currently at v0.35.0.
 Shipping on Google Play as a TWA (`com.astralgamer.rocketrush`) — in closed testing.
 
 Architecture note (v0.24.0): no longer purely single-file — the global
@@ -62,7 +62,7 @@ Inside `index.html`:
 | `rocketRushUpgrades` | Upgrade tiers object |
 | `rocketRushMasterUpgrades` | NG+ capstone booleans |
 | `rocketRushBankedCoins` | Integer wallet |
-| `rocketRushBankedStars` | Integer Stars |
+| `rocketRushStars` | Integer Stars (note: NOT `rocketRushBankedStars` — this table said so until v0.35.0 and it was wrong) |
 | `rocketRushLifetimeCoins` | Monotonic total |
 | `rocketRushDifficulty` | Selected tier id |
 | `rocketRushAudioSettings` | Music/SFX flags |
@@ -74,6 +74,7 @@ Inside `index.html`:
 | `rocketRushPowerupFilters` | v0.30.0 — per-type powerup spawn allowlist |
 | `rocketRushFilterUnlocked` | v0.32.0 — per-type filter switch bought with ✦ |
 | `rocketRushMasterMilestoneIdx` | v0.33.0 — highest Master ✦ milestone already paid |
+| `rocketRushMasterUpgrades.master_assist` | v0.35.0 — Master Assist tier 0-3 (integer, unlike the sibling capstone booleans) |
 
 ## Recent history (v0.18.0 → v0.29.0)
 
@@ -297,6 +298,50 @@ Inside `index.html`:
       debugging time here (a stale page made the gate look bypassed). Clear
       it with `navigator.serviceWorker.getRegistrations()` +
       `caches.keys()` deletes, or bump `CACHE_NAME` between test builds.
+24. **v0.35.0**: **Master Assist** — the last item off the v0.33.0 held
+    list. Shipped live (unlike the skill tree, which stays flag-off).
+    - **The only tiered line in the Master shop.** Its siblings are
+      single-purchase booleans; this is an integer 0-3 with an escalating
+      ✦ price (`MASTER_ASSIST_COSTS = [0,2,4,7]`, 13✦ for the full line).
+      That meant a second purchase handler
+      (`attemptMasterAssistPurchase`), its own card builder borrowing the
+      *coin* shop's pip + "current → next" vocabulary, and its own
+      section label — grouping it under CAPSTONES would imply
+      single-purchase.
+    - **Cumulative stages**, each softening a different edge of Master:
+      `Stabilizers` (gap ramp 2.0 → 1.55), `Bulwark Plating` (+1 starting
+      shield, additive on top of Reinforced Hull), `Resupply Line`
+      (powerups every 9 pairs instead of 13, matching Expert). `gapMin`
+      is deliberately untouched — Assist buys time to reach the 85px
+      wall, it never moves the wall.
+    - **Why it exists**: Master is the primary ✦ income path but also the
+      only tier starting at *zero* shields with the tightest gaps and
+      sparsest powerups. The tier you must survive to afford capstones
+      was the one giving no margin.
+    - **`masterAssistTier()` is the single chokepoint** for the
+      Master-tier-only rule, and every effect getter reads through it. A
+      future effect site structurally *cannot* forget the check — the
+      lesson from v0.30.0, where each capstone site had to remember the
+      enabled-toggle until `isCapstoneActive()` centralised it.
+    - **Cannot reopen the v0.33.0 ✦ farm**: milestones pay once ever, so
+      an easier Master lets a player *reach* higher milestones, never
+      re-earn old ones. Lifetime milestone ✦ stays 7.
+    - Verified by a harness extracting the real `DIFFICULTIES`, tuning
+      tables and accessors: 29 checks — cumulative tier effects, zero
+      leakage into the other three tiers at any tier, the ACTIVE toggle
+      restoring byte-identical unassisted Master, stacking with
+      Reinforced Hull, legacy saves adopting tier 0 unchanged, and
+      escalating costs. Plus a separate invariant check that starting
+      shields never exceed max across all 64 tier × hull × assist
+      combinations. Browser-verified: 20✦ → 18 → 14 → 7 through all three
+      tiers, pips filling, MAXED at T3, ACTIVE toggle appearing on first
+      purchase and persisting both ways.
+    - **Doc bug found and fixed**: the save-data table above listed the ✦
+      balance key as `rocketRushBankedStars`. The code has always used
+      `rocketRushStars` — the playtest recipe further down had it right,
+      the table did not.
+    - Remaining from the held list: only the **skill tree** (PR #28,
+      flag-off, v0.35.0 → will need renumbering to v0.36.0).
 
 Guidance tuning knobs in one block, all single-line edits:
 

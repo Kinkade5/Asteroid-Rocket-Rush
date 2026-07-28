@@ -1717,7 +1717,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.34.0</div>
+    <div class="version-badge" id="versionBadge">v0.35.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1878,7 +1878,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.34.0';
+  const GAME_VERSION = 'v0.35.0';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -3456,10 +3456,68 @@
     { id: 'stellar_surplus', label: 'Stellar Surplus', cost: 10,
       desc: '+5% score multiplier every 10 asteroids passed (caps at +50% per run).' },
   ];
+  // ======================================================================
+  // v0.35.0 — MASTER ASSIST (tiered ✦ upgrade)
+  // ======================================================================
+  // The one Master-shop line that is NOT a boolean capstone: three stages,
+  // each costing more ✦ than the last, each softening a different edge of
+  // Master difficulty. Cumulative — buying T2 keeps T1's effect.
+  //
+  // Why it exists: Master is the primary ✦ income path
+  // (MASTER_STAR_MILESTONES), but it's also the only tier that starts you
+  // at ZERO shields with the tightest gaps (115/85) and the sparsest
+  // powerups (every 13 pairs). That's a progression pinch — the tier you
+  // must survive to earn capstones is the one that gives you no margin.
+  // Assist widens that entry without touching any other tier.
+  //
+  // MASTER TIER ONLY, by design. These values are read through getters that
+  // check the active difficulty, so an owned Assist is inert on
+  // Beginner/Intermediate/Expert — it can't trivialise the tiers it wasn't
+  // bought for.
+  //
+  // Economy note: this cannot reopen the v0.33.0 ✦ farm. Milestones pay
+  // once ever (rocketRushMasterMilestoneIdx), so an easier Master lets a
+  // player *reach* the higher milestones they'd otherwise never clear —
+  // it does not let them re-earn anything. Lifetime milestone ✦ stays 7.
+  const MASTER_ASSIST_MAX_TIER = 3;
+  // Escalating price, per the "costs more stars after each upgrade" intent.
+  // T1 is deliberately reachable early (one meter star + the 2,500 Master
+  // milestone), because an assist you can only afford after mastering
+  // Master is an assist that arrives too late to assist.
+  const MASTER_ASSIST_COSTS  = [0, 2, 4, 7];   // index by tier; 13✦ for the full line
+  const MASTER_ASSIST_STAGES = ['None', 'Stabilizers', 'Bulwark Plating', 'Resupply Line'];
+  // Per-tier overrides. `null` = "no change at this tier", so the
+  // difficulty's own value is used — that keeps Master's numbers declared
+  // once in DIFFICULTIES instead of duplicated here, and makes the
+  // cumulative shape obvious at a glance (a value repeats until superseded).
+  //
+  //   T1 Stabilizers     — gaps tighten more slowly (ramp 2.0 → 1.55).
+  //                        Doesn't make any single gap easier; makes the
+  //                        run last long enough to reach a milestone.
+  //   T2 Bulwark Plating — +1 starting shield (0 → 1). The single biggest
+  //                        cliff: one clipped rock currently ends the run
+  //                        before it starts. Additive, so Reinforced Hull
+  //                        still stacks on top.
+  //   T3 Resupply Line   — powerups every 9 pairs instead of 13, matching
+  //                        Expert's cadence. Gaps stay brutal; you just get
+  //                        tools to recover with.
+  const MASTER_ASSIST_RAMP     = [null, 1.55, 1.55, 1.55];
+  const MASTER_ASSIST_START_SH = [0, 0, 1, 1];        // additive shields
+  const MASTER_ASSIST_PU_EVERY = [null, null, null, 9];
+
+  const MASTER_ASSIST_DEF = {
+    id: 'master_assist',
+    label: 'Master Assist',
+    desc: 'Softens Master difficulty one stage at a time. Master tier only.',
+  };
+
   const DEFAULT_MASTER_UPGRADES = {
     phoenix_cell: false,
     full_autopilot: false,
     stellar_surplus: false,
+    // v0.35.0 — integer tier, not a boolean. loadMasterUpgrades() merges it
+    // by typeof number, so existing saves auto-adopt tier 0.
+    master_assist: 0,
   };
   let masterUpgrades = loadMasterUpgrades();
   function loadMasterUpgrades() {
@@ -3480,6 +3538,12 @@
       const result = { ...DEFAULT_MASTER_UPGRADES };
       for (const id in result) {
         if (typeof parsed[id] === 'boolean') result[id] = parsed[id];
+        // v0.35.0 — Master Assist is a tier, not a flag. Clamped on load
+        // for the same reason loadUpgrades() clamps: a hand-edited or
+        // corrupt save must not index past the tuning tables.
+        else if (typeof result[id] === 'number' && typeof parsed[id] === 'number') {
+          result[id] = Math.max(0, Math.min(MASTER_ASSIST_MAX_TIER, Math.floor(parsed[id])));
+        }
       }
       return result;
     } catch (_) {
@@ -3509,6 +3573,11 @@
     phoenix_cell: true,
     full_autopilot: true,
     stellar_surplus: true,
+    // v0.35.0 — Assist gets the same free ON/OFF switch as the capstones.
+    // Worth having for this one especially: a player who wants an honest
+    // unassisted Master run (or a comparable leaderboard entry) can switch
+    // it off without refunding the ✦ they spent.
+    master_assist: true,
   };
   let masterEnabled = loadMasterEnabled();
   function loadMasterEnabled() {
@@ -3534,8 +3603,45 @@
   function isCapstoneActive(id) {
     return masterUpgrades[id] === true && masterEnabled[id] === true;
   }
+
+  // === v0.35.0 — Master Assist accessors ===
+  // masterAssistTier() is the ONLY place the "Master tier only" rule lives.
+  // Every effect getter below reads through it, so an owned Assist is
+  // structurally incapable of leaking into Beginner/Intermediate/Expert —
+  // a new effect site can't forget the check, the way v0.30.0's capstone
+  // sites could forget the enabled-toggle before isCapstoneActive() existed.
+  function masterAssistOwnedTier() {
+    const t = masterUpgrades.master_assist;
+    return typeof t === 'number' ? t : 0;
+  }
+  function isMasterAssistActive() {
+    return masterAssistOwnedTier() > 0 && masterEnabled.master_assist === true;
+  }
+  function masterAssistTier() {
+    if (!isMasterAssistActive()) return 0;
+    if (getDifficulty().id !== 'master') return 0; // Master tier only, by design
+    return masterAssistOwnedTier();
+  }
+  // Effect getters. Each returns the difficulty's own value unless the
+  // active Assist tier overrides it (null = no override at this tier).
+  function getGapRamp() {
+    const d = getDifficulty();
+    const o = MASTER_ASSIST_RAMP[masterAssistTier()];
+    return o === null ? d.gapRamp : o;
+  }
+  function getPowerupEveryPairs() {
+    const d = getDifficulty();
+    const o = MASTER_ASSIST_PU_EVERY[masterAssistTier()];
+    return o === null ? d.powerupEveryPairs : o;
+  }
+
   function toggleCapstone(id) {
-    if (masterUpgrades[id] !== true) return; // can't toggle what you don't own
+    // v0.35.0 — Master Assist is tier-based, so "owned" is tier > 0 rather
+    // than === true. Everything else about the switch is identical.
+    if (id === 'master_assist') {
+      if (masterAssistOwnedTier() <= 0) return;
+    }
+    else if (masterUpgrades[id] !== true) return; // can't toggle what you don't own
     masterEnabled[id] = !masterEnabled[id];
     saveMasterEnabled();
     Audio.play.uiClick();
@@ -3676,6 +3782,24 @@
     refreshShopView(); // v0.23.0 — repaint balance + card OWNED state
   }
 
+  // v0.35.0 — Master Assist buys one tier at a time. Separate from
+  // attemptMasterPurchase() because that one is single-purchase (sets a
+  // boolean); this increments and reads its own escalating cost table.
+  function attemptMasterAssistPurchase() {
+    if (!MASTER_SHOP_AVAILABLE || !ngPlusUnlocked()) return;
+    const tier = masterAssistOwnedTier();
+    if (tier >= MASTER_ASSIST_MAX_TIER) return;      // already maxed
+    const cost = MASTER_ASSIST_COSTS[tier + 1];
+    if (bankedStars < cost) return;
+    bankedStars -= cost;
+    masterUpgrades.master_assist = tier + 1;
+    saveBankedStars();
+    saveMasterUpgrades();
+    Audio.play.coinGold();
+    if (navigator.vibrate) navigator.vibrate(20);
+    refreshShopView();
+  }
+
   // ======================================================================
   // v0.25.0 — PHASE 4C: ROCKET SKINS (Star-bought cosmetics)
   // ======================================================================
@@ -3811,7 +3935,12 @@
   // or tier.maxShields directly — so upgrades apply everywhere naturally.
   function getStartingShields() {
     const d = getDifficulty();
-    return d.startingShields + TIER_VALUES.shieldStartDelta[upgrades.shield.hull];
+    // v0.35.0 — Master Assist T2 adds its shield on top of Reinforced Hull
+    // rather than replacing it, so the coin-shop investment still counts.
+    // masterAssistTier() returns 0 off Master, making this a no-op there.
+    return d.startingShields
+      + TIER_VALUES.shieldStartDelta[upgrades.shield.hull]
+      + MASTER_ASSIST_START_SH[masterAssistTier()];
   }
   function getMaxShields() {
     const d = getDifficulty();
@@ -4086,7 +4215,9 @@
     // First powerup lands at roughly the tier's cadence from the start — so
     // Beginner sees one quickly (~4 pairs in), Master has to earn it (~15).
     // Small 0.8× head start so the very first powerup feels a bit eager.
-    nextPowerupPair = Math.max(2, Math.round(getDifficulty().powerupEveryPairs * 0.8));
+    // v0.35.0 — via getPowerupEveryPairs() so Master Assist T3's tighter
+    // cadence applies to the first powerup too, not just later ones.
+    nextPowerupPair = Math.max(2, Math.round(getPowerupEveryPairs() * 0.8));
     shieldCharges = getStartingShields();
     shieldIFrameUntil = 0;
     shieldPopEffect = 0;
@@ -4111,7 +4242,10 @@
     // make `score` jump big, it would warp the gap-tightening curve.
     // Gap formula and floor come from the active difficulty tier.
     const diff = getDifficulty();
-    const gapSize = Math.max(diff.gapMin, diff.gapSize - pairsPassed * diff.gapRamp);
+    // v0.35.0 — ramp via getGapRamp() so Master Assist T1 can slow how fast
+    // gaps tighten. gapMin is untouched: the floor stays 85px, so Assist
+    // buys time to reach the wall, never moves the wall itself.
+    const gapSize = Math.max(diff.gapMin, diff.gapSize - pairsPassed * getGapRamp());
     const minY = 80;
     const maxY = BASE_H - 80 - gapSize;
     const gapY = minY + Math.random() * (maxY - minY);
@@ -5288,6 +5422,41 @@
   // v0.30.0 — capstone ON/OFF row. Only rendered for OWNED capstones (an
   // unowned one has nothing to switch), so the ACTIVE section simply
   // doesn't appear until the first purchase.
+  // v0.35.0 — Master Assist card. Tiered, so it borrows the coin shop's
+  // pip + "current → next" vocabulary rather than the capstone tab's
+  // OWNED/LOCKED shape — a player reading it should immediately see it
+  // behaves like a shop line, just priced in ✦.
+  function buildMasterAssistCardHtml() {
+    const tier = masterAssistOwnedTier();
+    const isMaxed = tier >= MASTER_ASSIST_MAX_TIER;
+    const cost = isMaxed ? null : MASTER_ASSIST_COSTS[tier + 1];
+    const canAfford = !isMaxed && bankedStars >= cost;
+
+    let pips = '';
+    for (let t = 1; t <= MASTER_ASSIST_MAX_TIER; t++) {
+      pips += `<span class="upgrade-tier-pip${t <= tier ? ' filled' : ''}"></span>`;
+    }
+
+    const btnHtml = isMaxed
+      ? `<button class="upgrade-buy master owned" disabled>MAXED</button>`
+      : `<button class="upgrade-buy master" data-master-assist="1"${canAfford ? '' : ' disabled'}>✦ ${cost}</button>`;
+
+    const valuesRow = isMaxed
+      ? `<div class="upgrade-values">${MASTER_ASSIST_STAGES[tier]} — max stage</div>`
+      : `<div class="upgrade-values">${MASTER_ASSIST_STAGES[tier]}<span class="arrow">→</span><span class="next">${MASTER_ASSIST_STAGES[tier + 1]}</span></div>`;
+
+    return `
+        <div class="upgrade-card master">
+          <div class="upgrade-header">
+            <div class="upgrade-label">${MASTER_ASSIST_DEF.label}</div>
+            <div class="upgrade-tier-pips">${pips}</div>
+          </div>
+          <div class="upgrade-desc">${MASTER_ASSIST_DEF.desc}</div>
+          ${valuesRow}
+          ${btnHtml}
+        </div>`;
+  }
+
   function buildCapstoneToggleHtml(def) {
     const on = masterEnabled[def.id] === true;
     return `
@@ -5390,14 +5559,22 @@
     // v0.30.0 — two new sections. ACTIVE only appears once at least one
     // capstone is owned (nothing to switch otherwise); POWERUPS is always
     // present since spawn filters apply to every player.
+    // v0.35.0 — Master Assist joins the ACTIVE switches once any tier is
+    // owned. Its "owned" test is tier > 0, not === true, so it's appended
+    // rather than folded into the MASTER_UPGRADE_DEFS filter above.
     const ownedCapstones = MASTER_UPGRADE_DEFS.filter(d => masterUpgrades[d.id] === true);
-    const activeSection = ownedCapstones.length
-      ? '<div class="shop-section-label">ACTIVE</div>' +
-        ownedCapstones.map(buildCapstoneToggleHtml).join('')
+    const toggleRows = ownedCapstones.map(buildCapstoneToggleHtml);
+    if (masterAssistOwnedTier() > 0) toggleRows.push(buildCapstoneToggleHtml(MASTER_ASSIST_DEF));
+    const activeSection = toggleRows.length
+      ? '<div class="shop-section-label">ACTIVE</div>' + toggleRows.join('')
       : '';
     shopMasterListEl.innerHTML =
       '<div class="shop-section-label">CAPSTONES</div>' +
       MASTER_UPGRADE_DEFS.map(buildMasterCardHtml).join('') +
+      // v0.35.0 — its own section: it's a tiered line, not a capstone, and
+      // grouping it under CAPSTONES would imply single-purchase.
+      '<div class="shop-section-label">MASTER ASSIST</div>' +
+      buildMasterAssistCardHtml() +
       activeSection +
       '<div class="shop-section-label">POWERUP SPAWNS</div>' +
       POWERUP_FILTER_DEFS.map(buildPowerupFilterHtml).join('') +
@@ -5435,6 +5612,16 @@
         e.stopPropagation();
         e.preventDefault();
         attemptMasterPurchase(btn.getAttribute('data-master'));
+      });
+    });
+    // v0.35.0 — Master Assist buy button. Own handler because it increments
+    // a tier rather than setting an ownership flag.
+    shopMasterListEl.querySelectorAll('.upgrade-buy[data-master-assist]').forEach(btn => {
+      btn.addEventListener('pointerdown', (e) => {
+        if (btn.disabled) return;
+        e.stopPropagation();
+        e.preventDefault();
+        attemptMasterAssistPurchase();
       });
     });
     // v0.25.0 — skin buy + equip wiring.
@@ -7194,7 +7381,9 @@
               spawnPowerup(top.x + top.w / 2, midY);
             }
           }
-          const base = diff.powerupEveryPairs;
+          // v0.35.0 — via the getter so Master Assist T3 tightens the
+          // recurring cadence, not just the opening one.
+          const base = getPowerupEveryPairs();
           // Jitter: 0.8× to 1.2× the base cadence, rounded to whole pairs.
           const jitter = 0.8 + Math.random() * 0.4;
           nextPowerupPair = pairsPassed + Math.max(1, Math.round(base * jitter));
