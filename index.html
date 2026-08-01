@@ -122,6 +122,69 @@
     z-index: 5;
   }
   .ready-prompt.active { opacity: 1; }
+  /* === v0.36.0 — Tutorial lesson card === */
+  /* Sits above the countdown/ready layer (z 5) because it can appear over a
+     frozen run. Unlike those two this one IS interactive: the scrim takes
+     the dismiss tap, which also stops it reaching the canvas thrust
+     handler — a lesson card that made you thrust on dismiss would drop the
+     rocket while you read the next one. */
+  .tutorial-card-scrim {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(5, 6, 15, 0.72);
+    backdrop-filter: blur(2px);
+    z-index: 12;
+  }
+  .tutorial-card-scrim.active { display: flex; }
+  .tutorial-card {
+    width: 100%;
+    max-width: 320px;
+    background: rgba(15, 20, 45, 0.96);
+    border: 1.5px solid rgba(138, 255, 193, 0.35);
+    border-radius: 16px;
+    padding: 22px 20px 18px;
+    text-align: center;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+  }
+  .tutorial-card-icon {
+    font-size: 40px;
+    line-height: 1;
+    margin-bottom: 10px;
+    filter: drop-shadow(0 2px 8px rgba(0,0,0,0.5));
+  }
+  .tutorial-card-title {
+    font-size: 17px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    color: #8affc1;
+    margin-bottom: 10px;
+  }
+  .tutorial-card-body {
+    font-size: 13px;
+    line-height: 1.5;
+    color: #dfe4ff;
+  }
+  .tutorial-card-tip {
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: #8a93c0;
+    margin-top: 10px;
+  }
+  .tutorial-card-tip:empty { display: none; }
+  .tutorial-card-cont {
+    margin-top: 16px;
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: #6f79a8;
+    animation: readyPulse 1.8s ease-in-out infinite;
+  }
+  body.reduced-motion .tutorial-card-cont {
+    animation: readyPulseGentle 2.4s ease-in-out infinite;
+  }
   .ready-prompt-main {
     font-size: clamp(26px, 8vw, 42px);
     font-weight: 800;
@@ -1495,6 +1558,13 @@
     color: #4a2a00;
     box-shadow: 0 0 40px rgba(255, 216, 107, 0.55), 0 8px 30px rgba(0,0,0,0.5);
   }
+  /* v0.36.0 — tutorial completion toast. Mint-green to match the tutorial's
+     own accent (TUTORIAL_DIFFICULTY.color), distinct from the violet NG+
+     and gold shop-maxed variants. */
+  .tutorial-toast {
+    border-color: rgba(138, 255, 193, 0.5);
+    color: #8affc1;
+  }
   /* === v0.23.0 — NG+ reveal toast variant === */
   /* Violet like the Master unlock toast (shared NG+/Stars visual language),
      but its own brighter glow so the "Signal Decoded" beat feels bigger. */
@@ -1685,6 +1755,12 @@
     <div>MASTER UNLOCKED</div>
     <div class="unlock-toast-sub">A new challenge awaits</div>
   </div>
+  <!-- v0.36.0 — tutorial completion toast. Own element rather than a
+       generic helper, matching how every other toast here works. -->
+  <div id="tutorialToast" class="unlock-toast tutorial-toast">
+    <div>TUTORIAL COMPLETE 🎓</div>
+    <div class="unlock-toast-sub" id="tutorialToastSub">+500 coins banked</div>
+  </div>
   <!-- v0.23.0 — NG+ reveal toast (fires once at 100k lifetime coins) -->
   <div id="ngplusToast" class="unlock-toast ngplus-toast">
     <div>SIGNAL DECODED ✦</div>
@@ -1705,6 +1781,9 @@
     <div class="difficulty-row" id="difficultyRow"></div>
     <button class="btn" id="startBtn">LAUNCH 🚀</button>
     <button class="btn btn-secondary" id="shopBtn" style="margin-top: 14px">SHOP 🛒</button>
+    <!-- v0.36.0 — Tutorial. Menu-only entry, replayable; no first-run
+         auto-trigger, so nothing changes for players who never tap it. -->
+    <button class="btn btn-secondary" id="tutorialBtn" style="margin-top: 14px">TUTORIAL 🎓</button>
     <!-- v0.24.0 — global leaderboard entry point. Opens the leaderboard overlay. -->
     <button class="btn btn-secondary" id="leaderboardBtn" style="margin-top: 14px">LEADERBOARD 🏆</button>
     <!-- PHASE 2 — vague progress scoreboard toward undisclosed (NG+) unlock.
@@ -1717,7 +1796,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.35.0</div>
+    <div class="version-badge" id="versionBadge">v0.36.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1775,6 +1854,18 @@
   <div id="readyPrompt" class="ready-prompt">
     <div class="ready-prompt-main">TAP TO START</div>
     <div class="ready-prompt-sub">Hold to thrust</div>
+  </div>
+  <!-- Tutorial lesson card (v0.36.0) — shown in STATE.TUTORIAL_INFO with the
+       world frozen behind it. Scrim is interactive so a tap anywhere
+       dismisses; the canvas handler must NOT also see that tap. -->
+  <div id="tutorialCard" class="tutorial-card-scrim">
+    <div class="tutorial-card">
+      <div class="tutorial-card-icon" id="tutorialCardIcon">🎓</div>
+      <div class="tutorial-card-title" id="tutorialCardTitle">WELCOME</div>
+      <div class="tutorial-card-body" id="tutorialCardBody"></div>
+      <div class="tutorial-card-tip" id="tutorialCardTip"></div>
+      <div class="tutorial-card-cont">TAP TO CONTINUE</div>
+    </div>
   </div>
   <!-- Multiplier milestone popup (v0.22.0) — center-screen 5×/10× callout.
        Non-interactive; see checkMultiplierMilestone() / showMultiplierPopup(). -->
@@ -1878,7 +1969,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.35.0';
+  const GAME_VERSION = 'v0.36.0';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -2563,6 +2654,15 @@
   const gameOverScreen = document.getElementById('gameOverScreen');
   const countdownOverlay = document.getElementById('countdownOverlay');
   const readyPromptEl = document.getElementById('readyPrompt'); // v0.34.0
+  // v0.36.0 — tutorial
+  const tutorialBtn        = document.getElementById('tutorialBtn');
+  const tutorialCardEl     = document.getElementById('tutorialCard');
+  const tutorialCardIcon   = document.getElementById('tutorialCardIcon');
+  const tutorialCardTitle  = document.getElementById('tutorialCardTitle');
+  const tutorialCardBody   = document.getElementById('tutorialCardBody');
+  const tutorialCardTip    = document.getElementById('tutorialCardTip');
+  const tutorialToast      = document.getElementById('tutorialToast');
+  const tutorialToastSub   = document.getElementById('tutorialToastSub');
   const countdownNumberEl = document.getElementById('countdownNumber');
   const multInnerEl = document.getElementById('multInner'); // v0.22.0 — multiplier popup
   const multNumEl = document.getElementById('multNum');
@@ -2673,7 +2773,11 @@
   // and the player's own tap advances READY → COUNTDOWN → PLAY. Behaves
   // exactly like COUNTDOWN everywhere else (idle float, HUD visible, no
   // physics or spawning) — loop()'s trailing else branch covers both.
-  const STATE = { MENU: 0, PLAY: 1, DEAD: 2, COUNTDOWN: 3, PAUSED: 4, READY: 5 };
+  // v0.36.0 — TUTORIAL_INFO added: the frozen "here's what that does" beat.
+  // Structurally a sibling of PAUSED (loop() skips update() for both, so the
+  // world holds exactly where it stopped), but its own state so pause,
+  // back-press and resume logic can't confuse a lesson card with a pause.
+  const STATE = { MENU: 0, PLAY: 1, DEAD: 2, COUNTDOWN: 3, PAUSED: 4, READY: 5, TUTORIAL_INFO: 6 };
   let state = STATE.MENU;
 
   // Best scores are now tracked per-tier (see bestScoreByTier /
@@ -2764,9 +2868,104 @@
     },
   };
 
+  // v0.36.0 — Tutorial. A real DIFFICULTIES entry so every existing
+  // getter (getStartingShields, getGapRamp, coin values, hyperfocusScale…)
+  // works unchanged, but deliberately ABSENT from DIFFICULTY_ORDER below —
+  // that array is the only thing the difficulty selector and the
+  // leaderboard tier list iterate, so tutorial is invisible in both without
+  // needing a special case in either.
+  //
+  // "Ridiculously easy" is literal: the gap is half the screen height
+  // (BASE_H 600) and gapRamp is 0, so it never tightens — a tutorial that
+  // gets harder while you're reading a card would be self-defeating.
+  // Shields are capped at 3 so the shield pickup has headroom to
+  // demonstrate itself. powerupEveryPairs is enormous because tutorial
+  // spawns are fully scripted (see TUTORIAL_QUEUE) rather than random.
+  const TUTORIAL_DIFFICULTY = {
+    id: 'tutorial', name: 'Tutorial',
+    color: '#8affc1', icon: '🎓', tagline: 'Learn the controls',
+    gapSize: 300, gapMin: 300, gapRamp: 0,
+    startingShields: 2, maxShields: 3,
+    coinBronzeValue: 6, coinSilverValue: 12, coinGoldValue: 21, coinPlatinumValue: 42,
+    pairsPerPoint: 3, pointsPerPair: 1,
+    powerupEveryPairs: 99999,
+    hyperfocusScale: 0.55,
+  };
+  DIFFICULTIES.tutorial = TUTORIAL_DIFFICULTY;
+
   // Display order for the selector. Master is last on purpose (teases the
   // locked tile at the end of the row).
+  // NOTE: 'tutorial' is intentionally not here — see TUTORIAL_DIFFICULTY.
   const DIFFICULTY_ORDER = ['beginner', 'intermediate', 'expert', 'master'];
+
+  // ======================================================================
+  // v0.36.0 — TUTORIAL
+  // ======================================================================
+  // Reachable only from the menu's TUTORIAL button, replayable forever.
+  // The run itself is an ordinary STATE.PLAY run on the tutorial difficulty
+  // — all physics, collision, coins and rendering are the real thing, which
+  // is the point: what you learn has to transfer. Only three things differ.
+  //
+  //   1. Powerup spawns are SCRIPTED, not random. Random spawning can't
+  //      guarantee all four types appear, and "introduce each powerup" is
+  //      the whole feature. The queue below is worked through in order.
+  //   2. Collecting the queued powerup freezes the run into
+  //      STATE.TUTORIAL_INFO and explains it. Powerup timers are frame-
+  //      driven (`ms left`, decremented in update), so not calling update()
+  //      genuinely pauses them — a wall-clock timer would have burned down
+  //      while the card was open.
+  //   3. Nothing is banked. See gameOver()'s tutorial guard.
+  //
+  // Missed pickups re-queue rather than being skipped: the type stays at
+  // the head of the queue and respawns a few pairs later, so a player who
+  // fumbles the magnet still gets taught the magnet.
+  const TUTORIAL_QUEUE = ['shield', 'slowmo', 'magnet', 'double'];
+  const TUTORIAL_FIRST_SPAWN_PAIR = 2;   // let them fly a little first
+  const TUTORIAL_SPAWN_GAP_PAIRS  = 3;   // pairs between spawn attempts
+  const TUTORIAL_OUTRO_PAIRS      = 2;   // pairs after the last lesson
+  const TUTORIAL_REWARD_COINS     = 500;
+
+  // Card copy. Kept short — this is read mid-run with a rocket on screen,
+  // not a manual. Each `tip` is the actionable half.
+  const TUTORIAL_CARDS = {
+    intro: {
+      icon: '🎓', title: 'WELCOME',
+      body: 'Hold to fire your thrusters and climb. Let go to fall.',
+      tip: 'Thread the gaps. Touching an asteroid or the ground ends the run.',
+    },
+    shield: {
+      icon: '🛡', title: 'SHIELD',
+      body: 'Absorbs one asteroid hit and is used up doing it.',
+      tip: 'Your shields show as pips at the top. The ground still kills through them.',
+    },
+    slowmo: {
+      icon: '🎯', title: 'HYPERFOCUS',
+      body: 'Slows the whole world down while it lasts. Your rocket stays fast.',
+      tip: 'Best saved for when the gaps get tight.',
+    },
+    magnet: {
+      icon: '🧲', title: 'MAGNET',
+      body: 'Pulls nearby coins to you so you can fly the safe line and still collect.',
+      tip: 'Coins buy upgrades in the shop.',
+    },
+    double: {
+      icon: '2✕', title: 'SCORE MULTIPLIER',
+      body: 'Multiplies every point you score while it is active.',
+      tip: 'Grab it before a clean run, not after.',
+    },
+    done: {
+      icon: '🚀', title: 'READY TO FLY',
+      body: 'That is everything. Pick a difficulty and go chase a high score.',
+      tip: '',
+    },
+  };
+
+  let tutorialActive = false;
+  let tutorialQueue = [];
+  let tutorialNextSpawnPair = 0;
+  let tutorialOutroPair = null;    // pair index at which the run wraps up
+  let tutorialPrevDifficulty = null;
+  let tutorialCardKey = null;      // which card STATE.TUTORIAL_INFO is showing
 
   // === Current difficulty ===
   // Persisted so the player doesn't have to reselect each session. Default
@@ -4805,6 +5004,31 @@
   bindStart(startBtn);
   bindStart(restartBtn);
 
+  // v0.36.0 — TUTORIAL button. Not routed through bindStart: that calls
+  // startGame() directly, which would launch a normal run on the player's
+  // real difficulty instead of entering tutorial mode first.
+  if (tutorialBtn) {
+    tutorialBtn.addEventListener('pointerdown', (e) => {
+      if (performance.now() < inputLockUntil) return;
+      e.stopPropagation();
+      e.preventDefault();
+      ensureAudio();
+      Audio.play.uiClick();
+      startTutorial();
+    });
+  }
+
+  // Lesson-card dismiss. Bound on the scrim (which is pointer-interactive,
+  // unlike the countdown/ready overlays) so the tap lands here and never
+  // reaches the canvas thrust handler underneath.
+  if (tutorialCardEl) {
+    tutorialCardEl.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      dismissTutorialCard();
+    });
+  }
+
   // QUIT button — back to main menu from game over
   quitBtn.addEventListener('pointerdown', (e) => {
     if (quitBtn.disabled) return;
@@ -6112,6 +6336,139 @@
     updateHud();
   }
 
+  // ======================================================================
+  // v0.36.0 — Tutorial control
+  // ======================================================================
+  function startTutorial() {
+    // Remember the real difficulty and restore it on exit. Deliberately NOT
+    // via setDifficulty(), which persists to localStorage — a tutorial run
+    // must not leave 'tutorial' as the saved tier if the app is killed
+    // mid-lesson.
+    tutorialPrevDifficulty = currentDifficultyId;
+    currentDifficultyId = 'tutorial';
+    tutorialActive = true;
+    tutorialQueue = [...TUTORIAL_QUEUE];
+    tutorialNextSpawnPair = TUTORIAL_FIRST_SPAWN_PAIR;
+    tutorialOutroPair = null;
+    startGame();               // READY → tap → countdown → PLAY, as normal
+  }
+
+  // Put the difficulty back and clear tutorial state. Safe to call twice.
+  function endTutorialMode() {
+    if (!tutorialActive) return;
+    tutorialActive = false;
+    tutorialQueue = [];
+    tutorialOutroPair = null;
+    tutorialCardKey = null;
+    tutorialCardEl.classList.remove('active');
+    if (tutorialPrevDifficulty && DIFFICULTIES[tutorialPrevDifficulty]) {
+      currentDifficultyId = tutorialPrevDifficulty;
+    }
+    tutorialPrevDifficulty = null;
+  }
+
+  // Freeze the run and show a lesson. `key` indexes TUTORIAL_CARDS.
+  function showTutorialCard(key) {
+    const card = TUTORIAL_CARDS[key];
+    if (!card) return;
+    tutorialCardKey = key;
+    tutorialCardIcon.textContent  = card.icon;
+    tutorialCardTitle.textContent = card.title;
+    tutorialCardBody.textContent  = card.body;
+    tutorialCardTip.textContent   = card.tip || '';
+    tutorialCardEl.classList.add('active');
+    // Drop thrust so a finger still down from the pickup doesn't hold the
+    // rocket up (or slam it into the ceiling) while the card is read.
+    thrusting = false;
+    keyHeld = false;
+    Audio.stopThrust();
+    thrustSoundOn = false;
+    state = STATE.TUTORIAL_INFO;
+    Audio.play.uiClick();
+  }
+
+  // Dismiss the current lesson. The 'done' card is terminal: it ends the
+  // tutorial and returns to the menu rather than resuming a run that has
+  // nothing left to teach.
+  function dismissTutorialCard() {
+    if (state !== STATE.TUTORIAL_INFO) return;
+    const wasDone = tutorialCardKey === 'done';
+    tutorialCardEl.classList.remove('active');
+    tutorialCardKey = null;
+    if (wasDone) {
+      completeTutorial();
+      return;
+    }
+    state = STATE.PLAY;
+    // Same lock the READY gate uses, so the dismiss tap can't immediately
+    // register as a thrust the player didn't ask for.
+    inputLockUntil = performance.now() + 140;
+  }
+
+  // Finish: pay the one-time bonus, then back to the menu.
+  function completeTutorial() {
+    // One-time only, tracked by its own flag so replays pay nothing.
+    // Credited to bankedCoins but NOT lifetimeCoins: lifetime drives the
+    // NG+ reveal and the ✦ meter, and should only ever count coins actually
+    // picked up in a scored run. Same reasoning v0.29.0's respec used when
+    // it banked a refund without touching the monotonic total.
+    let rewarded = false;
+    try {
+      if (localStorage.getItem('rocketRushTutorialRewarded') !== '1') {
+        bankedCoins += TUTORIAL_REWARD_COINS;
+        saveBankedCoins();
+        localStorage.setItem('rocketRushTutorialRewarded', '1');
+        rewarded = true;
+      }
+    } catch (_) { /* private mode — skip the payout rather than break */ }
+    endTutorialMode();
+    goToMenu();
+    if (rewarded && tutorialToast) {
+      tutorialToastSub.textContent = `+${TUTORIAL_REWARD_COINS} coins banked`;
+      tutorialToast.classList.add('show');
+      setTimeout(() => tutorialToast.classList.remove('show'), 3200);
+    }
+  }
+
+  // Scripted spawning + lesson pacing. Called once per pair passed while a
+  // tutorial run is live (see the pair-passed hook in update()).
+  function tutorialOnPairPassed() {
+    if (!tutorialActive) return;
+    // Outro: all four taught, run a couple more pairs, then wrap up.
+    if (tutorialQueue.length === 0) {
+      if (tutorialOutroPair === null) tutorialOutroPair = pairsPassed + TUTORIAL_OUTRO_PAIRS;
+      else if (pairsPassed >= tutorialOutroPair) showTutorialCard('done');
+      return;
+    }
+    if (pairsPassed < tutorialNextSpawnPair) return;
+    // Don't stack a second teaching pickup while one is still on screen —
+    // the player would collect them out of order and get the wrong card.
+    if (powerups.length > 0) return;
+    const type = tutorialQueue[0];
+    const upcoming = asteroids.filter(a => a.top && !a.passed && a.x > rocket.x + 40);
+    if (upcoming.length === 0) return;
+    const top = upcoming[0];
+    const bottom = asteroids.find(b => !b.top && Math.abs(b.x - top.x) < 5);
+    if (!bottom) return;
+    powerups.push({
+      x: top.x + top.w / 2, y: (top.h + bottom.y) / 2,
+      type, r: 14, phase: Math.random() * Math.PI * 2,
+    });
+    // Re-attempt window. If the player misses this one it stays at the head
+    // of the queue and respawns, so every type really does get taught.
+    tutorialNextSpawnPair = pairsPassed + TUTORIAL_SPAWN_GAP_PAIRS;
+  }
+
+  // Called from the powerup pickup handler. Returns true if this pickup was
+  // the queued lesson (and a card is now showing).
+  function tutorialOnPowerupCollected(type) {
+    if (!tutorialActive) return false;
+    if (tutorialQueue[0] !== type) return false;
+    tutorialQueue.shift();
+    showTutorialCard(type);
+    return true;
+  }
+
   // v0.34.0 — the second half of the old startGame(): everything from the
   // 3-2-1 beat onward. Split out so the player's tap in STATE.READY drives
   // it. Guarded on READY so a stray second tap during the countdown can't
@@ -6152,6 +6509,13 @@
       rocket.vy = -2.5;
       if (navigator.vibrate) navigator.vibrate(25);
       Audio.play.launch();
+
+      // v0.36.0 — tutorial opens with the controls card. Deferred one beat
+      // so the launch burst is visible behind it rather than being hidden
+      // by a card that appeared on the same frame.
+      if (tutorialActive) {
+        setTimeout(() => { if (state === STATE.PLAY && tutorialActive) showTutorialCard('intro'); }, 260);
+      }
     });
   }
 
@@ -6163,6 +6527,11 @@
     // cancelCountdown(), but every route to the menu should leave no prompt
     // burned over it regardless of which state we came from.
     readyPromptEl.classList.remove('active');
+    // v0.36.0 — the single chokepoint that restores the player's real
+    // difficulty and clears the lesson card. Every exit (QUIT, back press,
+    // Esc, death, completion) funnels through goToMenu(), so no route can
+    // leave 'tutorial' as the active tier. No-op outside the tutorial.
+    endTutorialMode();
     hideOverlay(gameOverScreen);
     showOverlay(startScreen);
     // Hide the unlock toast if it's still visible from a Master unlock
@@ -6240,6 +6609,8 @@
     });
   }
   // Quit out of a paused (or mid-countdown) run back to the menu.
+  // v0.36.0 — endTutorialMode() is called inside goToMenu() rather than
+  // here, so EVERY route back to the menu restores the real difficulty.
   function abandonRunToMenu() {
     cancelCountdown();
     resuming = false;
@@ -6308,6 +6679,9 @@
       Audio.play.uiBack();
       abandonRunToMenu();
     }
+    // v0.36.0 — Esc dismisses a lesson card rather than quitting, matching
+    // what the Android back button does in handleBackPress().
+    else if (state === STATE.TUTORIAL_INFO) dismissTutorialCard();
   });
 
   // === Back button (history sentinel) ===
@@ -6352,6 +6726,13 @@
       if (resuming) return true; // swallow during the resume beat
       Audio.play.uiBack();
       abandonRunToMenu();
+      return true;
+    }
+    // v0.36.0 — a lesson card takes the back press itself: dismissing is
+    // what a player means by "back" here, and it keeps them from being
+    // dumped to the menu mid-tutorial by an Android gesture.
+    if (state === STATE.TUTORIAL_INFO) {
+      dismissTutorialCard();
       return true;
     }
     // v0.34.0 — READY behaves like COUNTDOWN here: the run hasn't begun,
@@ -6403,6 +6784,22 @@
     Audio.stopThrust();
     thrustSoundOn = false;
     Audio.play.death();
+
+    // v0.36.0 — dying in the tutorial is instructive (the floor really does
+    // kill), but it must record NOTHING. Returning here skips every
+    // persistence path below in one place — bests, wallet, lifetime coins,
+    // ✦ meter, Master milestones and the leaderboard submission — rather
+    // than sprinkling `if (!tutorialActive)` through each of them and
+    // eventually missing one. The player goes straight back to the menu and
+    // can re-enter from the button.
+    // endTutorialMode() is deliberately NOT called here — it restores the
+    // real difficulty, and updateDead()/render() are still reading
+    // getDifficulty() during the death animation. goToMenu() below does the
+    // teardown once the animation is over.
+    if (tutorialActive) {
+      setTimeout(() => { if (state === STATE.DEAD) goToMenu(); }, 900);
+      return;
+    }
 
     // === Record bests (per-tier, independently) ===
     // Each tier has its own score & asteroids best (stored in
@@ -7368,6 +7765,15 @@
         }
         Audio.play.asteroidPass();
 
+        // v0.36.0 — tutorial runs drive their own scripted spawns and skip
+        // the random cadence below entirely (TUTORIAL_DIFFICULTY's
+        // powerupEveryPairs is huge, but returning here makes the intent
+        // explicit rather than relying on that number).
+        if (tutorialActive) {
+          tutorialOnPairPassed();
+          continue;
+        }
+
         // Powerup spawn trigger — pair-based so cadence is tier-independent.
         // Each tier sets its own `powerupEveryPairs` (Beginner generous,
         // Master sparse). Random ±20% wobble so they don't feel metronomic.
@@ -7579,6 +7985,12 @@
         });
         if (navigator.vibrate) navigator.vibrate(20);
         powerups.splice(i, 1);
+
+        // v0.36.0 — tutorial lesson. Fires AFTER the effect is applied and
+        // the pickup removed, so the frozen frame behind the card shows the
+        // powerup's actual result (shield pip lit, world already slowed).
+        // Breaks out because showTutorialCard() changes state mid-loop.
+        if (tutorialOnPowerupCollected(p.type)) break;
       }
     }
 
@@ -7661,7 +8073,9 @@
     // pause scrim.
     // v0.34.0 — include READY for the same reason COUNTDOWN is here: the
     // HUD is already revealed by startGame(), so the pips must be too.
-    if (state === STATE.PLAY || state === STATE.DEAD || state === STATE.COUNTDOWN || state === STATE.PAUSED || state === STATE.READY) {
+    // v0.36.0 — and TUTORIAL_INFO, so the shield pips stay visible behind
+    // the card that is explaining them.
+    if (state === STATE.PLAY || state === STATE.DEAD || state === STATE.COUNTDOWN || state === STATE.PAUSED || state === STATE.READY || state === STATE.TUTORIAL_INFO) {
       const maxShields = getMaxShields();
       let pips = '';
       for (let i = 0; i < maxShields; i++) {
@@ -7833,10 +8247,14 @@
 
     if (state === STATE.PLAY) update(dt);
     else if (state === STATE.DEAD) updateDead(dt);
-    else if (state === STATE.PAUSED) {
+    else if (state === STATE.PAUSED || state === STATE.TUTORIAL_INFO) {
       // v0.26.0 — frozen. Deliberately NO logic here: the idle-float branch
       // below would teleport the rocket back to center mid-run, potentially
       // inside an asteroid on resume. The world renders exactly as it froze.
+      // v0.36.0 — TUTORIAL_INFO shares this branch for the same reason, and
+      // gains one more: powerup timers count down inside update(), so not
+      // calling it is exactly what stops a lesson card from burning the
+      // buff it is describing.
     }
     else {
       rocket.y = BASE_H / 2 + Math.sin(t / 400) * 12;
