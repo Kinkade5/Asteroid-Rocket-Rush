@@ -1,7 +1,7 @@
 # Rocket Rush
 
 Flappy-style web game: dodge asteroid pairs, collect coins, grab powerups.
-Mobile-first, PWA-enabled. Currently at v0.35.0.
+Mobile-first, PWA-enabled. Currently at v0.36.0.
 Shipping on Google Play as a TWA (`com.astralgamer.rocketrush`) — in closed testing.
 
 Architecture note (v0.24.0): no longer purely single-file — the global
@@ -75,6 +75,7 @@ Inside `index.html`:
 | `rocketRushFilterUnlocked` | v0.32.0 — per-type filter switch bought with ✦ |
 | `rocketRushMasterMilestoneIdx` | v0.33.0 — highest Master ✦ milestone already paid |
 | `rocketRushMasterUpgrades.master_assist` | v0.35.0 — Master Assist tier 0-3 (integer, unlike the sibling capstone booleans) |
+| `rocketRushTutorialRewarded` | v0.36.0 — one-shot flag; tutorial completion bonus pays once ever |
 
 ## Recent history (v0.18.0 → v0.29.0)
 
@@ -341,7 +342,53 @@ Inside `index.html`:
       `rocketRushStars` — the playtest recipe further down had it right,
       the table did not.
     - Remaining from the held list: only the **skill tree** (PR #28,
-      flag-off, v0.35.0 → will need renumbering to v0.36.0).
+      flag-off — now needs renumbering to v0.37.0).
+25. **v0.36.0**: **Tutorial** — menu-only, replayable, scripted.
+    - **A real `DIFFICULTIES` entry** (`tutorial`) deliberately absent from
+      `DIFFICULTY_ORDER`. That array is the *only* thing the difficulty
+      selector and the leaderboard tier list iterate, so the tier is
+      invisible in both without either needing a special case. Gap is
+      300px of a 600px field with `gapRamp: 0` — it never tightens,
+      because a tutorial that gets harder while you read a card would be
+      self-defeating.
+    - **The run is otherwise real.** Ordinary `STATE.PLAY`, real physics,
+      collision, coins and rendering — what you learn has to transfer.
+      Only three things differ: scripted spawns, the lesson freeze, and
+      the fact that nothing is banked.
+    - **`STATE.TUTORIAL_INFO`** shares loop()'s frozen branch with PAUSED.
+      That's not just tidiness: powerup timers are frame-driven (`ms
+      left`, decremented inside `update`), so *not calling update* is
+      exactly what stops a lesson card from burning down the buff it is
+      describing. A wall-clock timer would have leaked.
+    - **Missed pickups re-queue.** The type stays at the head of
+      `tutorialQueue` and respawns a few pairs later, so fumbling the
+      magnet doesn't mean never being taught the magnet. Out-of-order
+      pickups are ignored rather than consuming the wrong lesson.
+    - **`goToMenu()` is the single teardown chokepoint** — it restores the
+      player's real difficulty and clears the card. Every exit (QUIT, back,
+      Esc, death, completion) funnels through it, so no route can strand
+      `tutorial` as the active tier. `startTutorial()` deliberately does
+      NOT use `setDifficulty()`, which would persist `tutorial` to
+      localStorage if the app were killed mid-lesson.
+    - **`gameOver()` bails before any persistence** when the tutorial is
+      live — one early return covering bests, wallet, lifetime coins, ✦
+      meter, Master milestones and leaderboard submission, rather than
+      sprinkling guards through each and eventually missing one. It
+      deliberately does *not* call `endTutorialMode()` there: the death
+      animation is still reading `getDifficulty()`.
+    - **Reward**: 500 coins, once ever (`rocketRushTutorialRewarded`),
+      credited to `bankedCoins` but **not** `lifetimeCoins` — lifetime
+      drives the NG+ reveal and ✦ meter and should only count coins picked
+      up in a scored run. Same reasoning v0.29.0's respec used.
+    - Verified by a harness driving the real state machine: 50 checks
+      covering lesson order, missed-pickup re-queue, out-of-order pickups,
+      no double-spawn, outro pacing, both hooks being no-ops outside the
+      tutorial, and a source-level assertion that `gameOver` bails ahead of
+      every persistence path. Browser-verified through to the WELCOME card;
+      the full run couldn't be driven headlessly because a hidden Browser
+      pane throttles `requestAnimationFrame` and freezes the game loop.
+    - **Not playtested for feel** — pacing of the lessons and the card copy
+      are unreviewed.
 
 Guidance tuning knobs in one block, all single-line edits:
 
