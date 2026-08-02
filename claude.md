@@ -1,7 +1,7 @@
 # Rocket Rush
 
 Flappy-style web game: dodge asteroid pairs, collect coins, grab powerups.
-Mobile-first, PWA-enabled. Currently at v0.36.0.
+Mobile-first, PWA-enabled. Currently at v0.37.0.
 Shipping on Google Play as a TWA (`com.astralgamer.rocketrush`) — in closed testing.
 
 Architecture note (v0.24.0): no longer purely single-file — the global
@@ -389,6 +389,54 @@ Inside `index.html`:
       pane throttles `requestAnimationFrame` and freezes the game loop.
     - **Not playtested for feel** — pacing of the lessons and the card copy
       are unreviewed.
+26. **v0.37.0**: Three fixes from Brent's first play of the tutorial.
+    - **Lesson cards enforce a 3s read time** (`TUTORIAL_CARD_MIN_MS`).
+      Players tap reflexively to un-freeze a stopped game, so the first tap
+      after a card appeared was dismissing it unread — the lesson landed on
+      nobody. `dismissTutorialCard()` now refuses input until the timer
+      expires, which covers *every* route (scrim tap, Esc, Android back)
+      because they all funnel through it. The continue hint counts the
+      seconds down as a large dimmed numeral and deliberately does **not**
+      pulse while waiting — pulsing invites the tap being refused. A
+      generation counter (same idea as `countdownGen`) kills a stale ticker
+      when cards change faster than the interval.
+    - **Opening drop softened per tier** (`launchEaseMs` + `LAUNCH_EASE_MIN`).
+      The rocket left the launch kick straight into full gravity, so every
+      run began with a fast sink before the player had oriented — worst on
+      the easy tiers, where the player being onboarded can least afford it.
+      Gravity now starts at 0.25× and ramps linearly to full over a per-tier
+      window: tutorial 1400ms, beginner 1100, intermediate 480, expert 250,
+      **master 0 (untouched — its opening drop is part of the tier's
+      identity)**. Measured softening of the first second's fall: 50 / 44 /
+      26 / 15 / 0 %.
+      A ramp rather than a stronger upward kick **on purpose**: a bigger
+      kick would fling new players into the ceiling, trading one death for
+      another. Only falling is softened — thrust, max velocities and gap
+      geometry are untouched. Armed in `beginCountdown()` at the transition
+      into PLAY, *not* in `resumeGame()`, so unpausing can't re-grant free
+      sink-time. Frame-driven like the powerup timers, so a pause (or an
+      open lesson card) holds the ramp instead of spending it.
+    - **Tutorial button promoted.** As a muted third button it was
+      invisible to the new players it exists for. It now has two
+      presentations switched by `refreshTutorialCta()`, keyed on the
+      completion flag: until you finish it, a taller mint CTA with a
+      sub-label and a slow glow that sits **above LAUNCH**; afterwards, a
+      plain secondary button back in its old slot. CSS `order` does the
+      moving — no DOM surgery, no second copy of the button. Everything
+      above the buttons keeps the default `order: 0`, so explicit orders of
+      1-6 on the buttons alone reposition without disturbing the header.
+      **Gotcha hit while building**: `#startScreen > #tutorialBtn` (two IDs)
+      out-specifies `#tutorialBtn.tutorial-cta` (one ID + class), so the CTA
+      rules must carry the parent selector too or `order` silently loses.
+    - Verified by a new launch-ease harness (22 checks: per-tier windows,
+      Master byte-identical, the ordering the brief asked for, and that the
+      ramp is temporary rather than a permanent gravity nerf once terminal
+      velocity is accounted for) plus browser checks of the CTA in both
+      states and the read lock refusing five rapid taps then accepting one
+      at 3.2s. Existing tutorial (50) and Master Assist (29) harnesses
+      re-run clean.
+    - **Tuning numbers are still guesses** — the ease windows and the 3s
+      read time are all single-line edits.
 
 Guidance tuning knobs in one block, all single-line edits:
 

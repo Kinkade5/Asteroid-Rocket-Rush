@@ -122,6 +122,62 @@
     z-index: 5;
   }
   .ready-prompt.active { opacity: 1; }
+  /* === v0.37.0 — Tutorial button, two presentations === */
+  /* The menu overlay is a flex column, and everything above the buttons
+     (title, subtitle, difficulty) has the default order 0. Giving the
+     buttons explicit orders >= 1 therefore keeps them all below that block
+     while letting the tutorial button move between two slots without
+     touching the DOM. */
+  #startScreen > #tutorialBtn  { order: 4; }
+  #startScreen > #startBtn     { order: 2; }
+  #startScreen > #shopBtn      { order: 3; }
+  #startScreen > #leaderboardBtn { order: 5; }
+  #startScreen > #scoreboardTile { order: 6; }
+  /* Default (already completed): a normal secondary button in its old slot,
+     sub-label hidden. */
+  #tutorialBtn { margin-top: 14px; }
+  .tutorial-btn-sub { display: none; }
+
+  /* First-timer CTA: jumps above LAUNCH, mint accent, larger, two lines,
+     and a slow attention glow. This is the one thing a brand-new player
+     must not miss, and as a muted third button they were missing it. */
+  /* Scoped with #startScreen so this out-specifies the `order: 4` default
+     above (two IDs). Without the parent selector the default wins and the
+     button never moves. */
+  #startScreen > #tutorialBtn.tutorial-cta {
+    order: 1;
+    margin-top: 0;
+    margin-bottom: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding-top: 14px;
+    padding-bottom: 12px;
+    border-color: rgba(138, 255, 193, 0.75);
+    color: #8affc1;
+    background: rgba(138, 255, 193, 0.10);
+    animation: tutorialCtaGlow 2.4s ease-in-out infinite;
+  }
+  #startScreen > #tutorialBtn.tutorial-cta .tutorial-btn-main { font-size: 17px; letter-spacing: 2px; }
+  #startScreen > #tutorialBtn.tutorial-cta .tutorial-btn-sub {
+    display: block;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+    color: #7f8bb5;
+    text-transform: none;
+  }
+  @keyframes tutorialCtaGlow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(138, 255, 193, 0.0); }
+    50%      { box-shadow: 0 0 22px 2px rgba(138, 255, 193, 0.35); }
+  }
+  /* Reduce Motion: keep a constant glow so the button is still the loudest
+     thing on the menu, without the repeating pulse. */
+  body.reduced-motion #startScreen > #tutorialBtn.tutorial-cta {
+    animation: none;
+    box-shadow: 0 0 18px 1px rgba(138, 255, 193, 0.28);
+  }
+
   /* === v0.36.0 — Tutorial lesson card === */
   /* Sits above the countdown/ready layer (z 5) because it can appear over a
      frozen run. Unlike those two this one IS interactive: the scrim takes
@@ -181,6 +237,17 @@
     letter-spacing: 2px;
     color: #6f79a8;
     animation: readyPulse 1.8s ease-in-out infinite;
+  }
+  /* v0.37.0 — counting down the enforced read time. Rendered as a large
+     dimmed numeral rather than the tap prompt, so the card visibly is not
+     asking to be dismissed yet. No pulse: pulsing invites the tap we are
+     deliberately refusing. */
+  .tutorial-card-cont.waiting {
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: 0;
+    color: #4d5680;
+    animation: none;
   }
   body.reduced-motion .tutorial-card-cont {
     animation: readyPulseGentle 2.4s ease-in-out infinite;
@@ -1782,8 +1849,15 @@
     <button class="btn" id="startBtn">LAUNCH 🚀</button>
     <button class="btn btn-secondary" id="shopBtn" style="margin-top: 14px">SHOP 🛒</button>
     <!-- v0.36.0 — Tutorial. Menu-only entry, replayable; no first-run
-         auto-trigger, so nothing changes for players who never tap it. -->
-    <button class="btn btn-secondary" id="tutorialBtn" style="margin-top: 14px">TUTORIAL 🎓</button>
+         auto-trigger, so nothing changes for players who never tap it.
+         v0.37.0 — two presentations, switched by refreshTutorialCta():
+         a prominent CTA ABOVE Launch until it's been completed, then a
+         plain secondary button back down here. CSS `order` does the moving,
+         so there's no DOM surgery and no second copy of the button. -->
+    <button class="btn btn-secondary" id="tutorialBtn">
+      <span class="tutorial-btn-main">TUTORIAL 🎓</span>
+      <span class="tutorial-btn-sub">New here? Learn the basics first</span>
+    </button>
     <!-- v0.24.0 — global leaderboard entry point. Opens the leaderboard overlay. -->
     <button class="btn btn-secondary" id="leaderboardBtn" style="margin-top: 14px">LEADERBOARD 🏆</button>
     <!-- PHASE 2 — vague progress scoreboard toward undisclosed (NG+) unlock.
@@ -1796,7 +1870,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.36.0</div>
+    <div class="version-badge" id="versionBadge">v0.37.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1864,7 +1938,7 @@
       <div class="tutorial-card-title" id="tutorialCardTitle">WELCOME</div>
       <div class="tutorial-card-body" id="tutorialCardBody"></div>
       <div class="tutorial-card-tip" id="tutorialCardTip"></div>
-      <div class="tutorial-card-cont">TAP TO CONTINUE</div>
+      <div class="tutorial-card-cont" id="tutorialCardCont">TAP TO CONTINUE</div>
     </div>
   </div>
   <!-- Multiplier milestone popup (v0.22.0) — center-screen 5×/10× callout.
@@ -1969,7 +2043,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.36.0';
+  const GAME_VERSION = 'v0.37.0';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -2661,6 +2735,7 @@
   const tutorialCardTitle  = document.getElementById('tutorialCardTitle');
   const tutorialCardBody   = document.getElementById('tutorialCardBody');
   const tutorialCardTip    = document.getElementById('tutorialCardTip');
+  const tutorialCardCont   = document.getElementById('tutorialCardCont'); // v0.37.0
   const tutorialToast      = document.getElementById('tutorialToast');
   const tutorialToastSub   = document.getElementById('tutorialToastSub');
   const countdownNumberEl = document.getElementById('countdownNumber');
@@ -2795,6 +2870,36 @@
   // (getThrust(), getGravity(), etc.) that apply Hangar upgrade multipliers.
   // The raw constants stay here as BASE_* for reference and baseline math.
   const BASE_GRAVITY = 0.52;
+  // ======================================================================
+  // v0.37.0 — launch ease (the "initial drop")
+  // ======================================================================
+  // The rocket leaves the launch kick (vy -2.5) straight into full gravity,
+  // so the opening moment of every run was a fast sink before the player
+  // had oriented — punishing on the easy tiers, where the player being
+  // onboarded is exactly the one who can least afford it.
+  //
+  // Fix is a per-tier gravity ramp-in: gravity starts at LAUNCH_EASE_MIN of
+  // normal and eases linearly to full over the tier's `launchEaseMs`. A
+  // *ramp* rather than a bigger upward kick on purpose — a stronger kick
+  // would fling new players into the ceiling, trading one death for
+  // another. This only softens falling; thrust, max velocities and gap
+  // geometry are untouched.
+  //
+  // Per-tier windows (see DIFFICULTIES): tutorial 1400, beginner 1100,
+  // intermediate 600, expert 380, master 0. Master's `0` disables the ramp
+  // entirely — its opening drop is part of the tier's identity.
+  //
+  // Frame-driven (decremented by dt in update) rather than wall-clock, so
+  // pausing mid-ramp holds it instead of burning it — the same reason the
+  // powerup timers work this way.
+  const LAUNCH_EASE_MIN = 0.25;
+  let launchEaseLeftMs = 0;
+  function launchEaseFactor() {
+    const total = getDifficulty().launchEaseMs || 0;
+    if (total <= 0 || launchEaseLeftMs <= 0) return 1;
+    const progress = 1 - (launchEaseLeftMs / total);   // 0 at start → 1 at end
+    return LAUNCH_EASE_MIN + (1 - LAUNCH_EASE_MIN) * progress;
+  }
   const FLAP = -7.4;
   const BASE_THRUST = -1.05;
   const BASE_MAX_UP_VY = -7.5;
@@ -2830,6 +2935,7 @@
       pairsPerPoint: 3, pointsPerPair: 1,
       powerupEveryPairs: 3,   // generous — rewards newer players
       hyperfocusScale: 0.70,  // v0.17.0 — light assist; wide gaps don't need much slowdown
+      launchEaseMs: 1100,     // v0.37.0 — see LAUNCH_EASE_MIN
     },
     intermediate: {
       id: 'intermediate', name: 'Intermediate',
@@ -2840,6 +2946,7 @@
       pairsPerPoint: 3, pointsPerPair: 2,
       powerupEveryPairs: 6,   // classic baseline cadence
       hyperfocusScale: 0.55,  // classic slowdown feel
+      launchEaseMs: 480,      // v0.37.0 — softened, but noticeably less than Beginner
     },
     expert: {
       id: 'expert', name: 'Expert',
@@ -2850,6 +2957,7 @@
       pairsPerPoint: 3, pointsPerPair: 5,
       powerupEveryPairs: 9,  // rarer — fewer safety nets
       hyperfocusScale: 0.45,  // v0.17.0 — strong slowdown to give time on tight gaps
+      launchEaseMs: 250,      // v0.37.0 — just enough to orient; Expert should still bite
     },
     // Master is shown as a locked tile until unlocked. The `tagline` is
     // shown post-unlock (replacing the "???" mystery). The `unlockHint`
@@ -2865,6 +2973,9 @@
       pairsPerPoint: 3, pointsPerPair: 10,
       powerupEveryPairs: 13,  // sparse — survive on skill
       hyperfocusScale: 0.35,  // v0.17.0 — dramatic slowdown; brutal gaps demand it
+      // v0.37.0 — 0 means NO ease at all. Master's opening drop is part of
+      // its identity and was explicitly left untouched.
+      launchEaseMs: 0,
     },
   };
 
@@ -2890,6 +3001,7 @@
     pairsPerPoint: 3, pointsPerPair: 1,
     powerupEveryPairs: 99999,
     hyperfocusScale: 0.55,
+    launchEaseMs: 1400,     // v0.37.0 — the gentlest opening in the game
   };
   DIFFICULTIES.tutorial = TUTORIAL_DIFFICULTY;
 
@@ -2924,6 +3036,12 @@
   const TUTORIAL_SPAWN_GAP_PAIRS  = 3;   // pairs between spawn attempts
   const TUTORIAL_OUTRO_PAIRS      = 2;   // pairs after the last lesson
   const TUTORIAL_REWARD_COINS     = 500;
+  // v0.37.0 — enforced read time. Players tap reflexively to resume a frozen
+  // game, so the very first tap after a card appeared was dismissing it
+  // before it had been read — the lesson landed on nobody. The card now
+  // refuses input for this long and counts down to it, so the wait reads as
+  // deliberate rather than as a broken button.
+  const TUTORIAL_CARD_MIN_MS = 3000;
 
   // Card copy. Kept short — this is read mid-run with a rocket on screen,
   // not a manual. Each `tip` is the actionable half.
@@ -2966,6 +3084,12 @@
   let tutorialOutroPair = null;    // pair index at which the run wraps up
   let tutorialPrevDifficulty = null;
   let tutorialCardKey = null;      // which card STATE.TUTORIAL_INFO is showing
+  // v0.37.0 — read-time lock. `gen` cancels a stale countdown ticker the same
+  // way countdownGen cancels a stale 3-2-1 chain: cards can be dismissed and
+  // reopened faster than the interval, and a leftover tick must not overwrite
+  // the new card's hint.
+  let tutorialCardReadyAt = 0;
+  let tutorialCardGen = 0;
 
   // === Current difficulty ===
   // Persisted so the player doesn't have to reselect each session. Default
@@ -4168,7 +4292,9 @@
   // together — both multipliers < 1, so both values shrink in magnitude.
   function getThrust()     { return BASE_THRUST      * PROPULSION_THRUST_MULT[upgrades.hangar.propulsion]; }
   function getMaxUpVy()    { return BASE_MAX_UP_VY   * PROPULSION_MAX_VY_MULT[upgrades.hangar.propulsion]; }
-  function getGravity()    { return BASE_GRAVITY     * INTEGRITY_GRAVITY_MULT[upgrades.hangar.integrity]; }
+  // v0.37.0 — launchEaseFactor() is 1 outside the opening ramp (and always 1
+  // on Master), so this is a no-op for the rest of every run.
+  function getGravity()    { return BASE_GRAVITY     * INTEGRITY_GRAVITY_MULT[upgrades.hangar.integrity] * launchEaseFactor(); }
   function getMaxDownVy()  { return BASE_MAX_DOWN_VY * INTEGRITY_MAX_VY_MULT[upgrades.hangar.integrity]; }
 
   // === Hyperfocus getters (v0.14.0) ===
@@ -4420,6 +4546,10 @@
     shieldCharges = getStartingShields();
     shieldIFrameUntil = 0;
     shieldPopEffect = 0;
+    // v0.37.0 — clear the opening gravity ramp. beginCountdown() arms it at
+    // the moment PLAY starts; zeroing here means an abandoned run can't leave
+    // it primed for whatever happens next.
+    launchEaseLeftMs = 0;
     phoenixUsedThisRun = false; // v0.22.0 — re-arm Phoenix Cell each run
     phoenixFloorGraceUntil = 0; // v0.33.0 — never carry grace across runs
     multMilestoneShown = 0;     // v0.22.0 — re-arm multiplier popups each run
@@ -6339,6 +6469,18 @@
   // ======================================================================
   // v0.36.0 — Tutorial control
   // ======================================================================
+  // v0.37.0 — swap the tutorial button between its CTA and plain forms.
+  // Keyed on the completion flag rather than a separate "seen" key: having
+  // *finished* it is the thing that means you no longer need pointing at it.
+  // Called on load and on every return to the menu, so finishing the
+  // tutorial demotes the button immediately.
+  function refreshTutorialCta() {
+    if (!tutorialBtn) return;
+    let done = false;
+    try { done = localStorage.getItem('rocketRushTutorialRewarded') === '1'; } catch (_) {}
+    tutorialBtn.classList.toggle('tutorial-cta', !done);
+  }
+
   function startTutorial() {
     // Remember the real difficulty and restore it on exit. Deliberately NOT
     // via setDifficulty(), which persists to localStorage — a tutorial run
@@ -6385,6 +6527,25 @@
     thrustSoundOn = false;
     state = STATE.TUTORIAL_INFO;
     Audio.play.uiClick();
+
+    // v0.37.0 — hold the card open for a minimum read time, and show the
+    // remaining seconds so the unresponsive tap is explained rather than
+    // just ignored. The hint swaps to the normal prompt when it unlocks.
+    tutorialCardReadyAt = performance.now() + TUTORIAL_CARD_MIN_MS;
+    const gen = ++tutorialCardGen;
+    tutorialCardCont.classList.add('waiting');
+    const tick = () => {
+      if (gen !== tutorialCardGen) return;          // card changed — stale
+      const left = tutorialCardReadyAt - performance.now();
+      if (left > 0) {
+        tutorialCardCont.textContent = String(Math.ceil(left / 1000));
+        setTimeout(tick, 120);
+      } else {
+        tutorialCardCont.classList.remove('waiting');
+        tutorialCardCont.textContent = 'TAP TO CONTINUE';
+      }
+    };
+    tick();
   }
 
   // Dismiss the current lesson. The 'done' card is terminal: it ends the
@@ -6392,6 +6553,10 @@
   // nothing left to teach.
   function dismissTutorialCard() {
     if (state !== STATE.TUTORIAL_INFO) return;
+    // v0.37.0 — enforced read time. Guards EVERY dismissal route (scrim tap,
+    // Esc, Android back) because they all funnel through here.
+    if (performance.now() < tutorialCardReadyAt) return;
+    tutorialCardGen++;                    // stop any in-flight countdown tick
     const wasDone = tutorialCardKey === 'done';
     tutorialCardEl.classList.remove('active');
     tutorialCardKey = null;
@@ -6423,6 +6588,7 @@
     } catch (_) { /* private mode — skip the payout rather than break */ }
     endTutorialMode();
     goToMenu();
+    refreshTutorialCta();   // v0.37.0 — demote the button now it's been done
     if (rewarded && tutorialToast) {
       tutorialToastSub.textContent = `+${TUTORIAL_REWARD_COINS} coins banked`;
       tutorialToast.classList.add('show');
@@ -6507,6 +6673,10 @@
       // feel delayed on touch; with that bug fixed (click-start now engages
       // thrust for held fingers), the initial boost feels right again.
       rocket.vy = -2.5;
+      // v0.37.0 — arm the gravity ramp here, at the transition into PLAY,
+      // NOT in resumeGame(): re-granting a soft opening on every unpause
+      // would hand out free sink-time mid-run.
+      launchEaseLeftMs = getDifficulty().launchEaseMs || 0;
       if (navigator.vibrate) navigator.vibrate(25);
       Audio.play.launch();
 
@@ -7563,6 +7733,13 @@
     // Sync the looped thrust audio to whatever `thrusting` is right now.
     syncThrustSound();
 
+    // v0.37.0 — burn down the opening gravity ramp. dt is in 60fps frame
+    // units, so one frame is 1000/60 ms. Living in update() means a paused
+    // run (or an open tutorial card) holds the ramp rather than spending it.
+    if (launchEaseLeftMs > 0) {
+      launchEaseLeftMs = Math.max(0, launchEaseLeftMs - dt * (1000 / 60));
+    }
+
     // Hold-to-thrust — rocket physics run on raw dt, unscaled by Hyperfocus
     if (state === STATE.PLAY && thrusting) {
       rocket.vy += thrust * dt;
@@ -8296,6 +8473,7 @@
   refreshWalletUI();  // show current banked coins on main menu
   refreshScoreboardUI();  // Phase 2/4B: mystery bar, or ✦ Star meter once unlocked
   renderDifficultySelector();  // build the 4 tiles (Master locked unless unlocked)
+  refreshTutorialCta();  // v0.37.0 — promote the tutorial button until it's done
   if (revealOnLoad) {
     // Land the toast a beat after the menu paints so it reads clearly.
     setTimeout(() => {
