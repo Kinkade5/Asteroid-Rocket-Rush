@@ -2289,7 +2289,27 @@
   // The flag gates BOTH the tree UI and the new prereq edges. With it off,
   // upgradePrereqMet() behaves exactly as v0.33.0 did (only Platinum's
   // own `prereq` applies), so testers on the current build see zero change.
-  const SKILL_TREE_AVAILABLE = false;
+  //
+  // ---- Playtest affordance -------------------------------------------
+  // `?playtest=1` (TEST_PLAYTEST_MODE, declared with the coin doubler
+  // above) turns the tree on AND lifts the NG+ gate on the MASTER tab, for
+  // that page load only.
+  //
+  // This branch originally declared its own copy of that constant; the
+  // rebase onto v0.38.0 collapsed the two, since a second `const` of the
+  // same name in this scope is a SyntaxError that would break the whole
+  // game rather than just the feature.
+  //
+  // Why MASTER specifically: in tree mode HANGAR folds into the tree, so a
+  // save without NG+ would see a single tab — and renderShopSegmentedControl
+  // hides the control entirely at <= 1 tab. Without the lift you can't see
+  // the tab bar in the preview at all. It reveals a shop tab and grants no
+  // coins or ✦, so there's nothing to exploit if a player finds it.
+
+  // Post-launch, flip this one line to true. TEST_PLAYTEST_MODE is the
+  // preview override and is expected to stay as it is.
+  const SKILL_TREE_ENABLED = false;
+  const SKILL_TREE_AVAILABLE = SKILL_TREE_ENABLED || TEST_PLAYTEST_MODE;
 
   // v0.25.0 — meter economy retuned (was a flat 100k per ✦). NG+ now
   // reveals at the FIRST meter star, and the meter schedule is:
@@ -5853,7 +5873,10 @@
         // ever unlocking Master tier; they still get the shop (their Star
         // income is just meter-only until they unlock Master). Independent
         // gates by design — see ngplus-design.md §1.
-        return MASTER_SHOP_AVAILABLE && ngPlusUnlocked();
+        // v0.39.0 — TEST_PLAYTEST_MODE lifts the NG+ gate so the preview can
+        // exercise the tab bar (see the flag's comment block). Ownership and
+        // ✦ balance are untouched — this only makes the tab reachable.
+        return MASTER_SHOP_AVAILABLE && (ngPlusUnlocked() || TEST_PLAYTEST_MODE);
       }
       return true;
     });

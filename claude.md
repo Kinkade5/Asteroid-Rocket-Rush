@@ -532,9 +532,20 @@ Inside `index.html`:
       every edge releasing exactly on its tier, all 42 tiers reachable at
       unchanged cost, and grandfathering that exempts invested lines
       without leaking to untouched ones.
-    - **Not yet playtested in a browser** — flag is off, so nothing reaches
-      testers. Flip `SKILL_TREE_AVAILABLE` to `true` in DevTools (or the
-      source) to try it.
+    - **Playtest via `?playtest=1`** — that param turns the tree on *and*
+      lifts the NG+ gate on the MASTER tab, for that page load only. It's a
+      param rather than a hardcoded `true` because (a) there's no DevTools
+      on a phone and this is a mobile-first game, and (b) a temporary
+      hardcoded flag is exactly how v0.28.4's diagnostic badge ended up
+      needing v0.28.7 to remove it. Opt-in per load = safe to merge, no
+      cleanup debt. It reveals a shop tab and grants no currency, so
+      there's nothing to exploit if a player finds it.
+      The MASTER lift matters because in tree mode HANGAR folds into the
+      tree, so a save without NG+ sees a single tab — and
+      `renderShopSegmentedControl` hides the control entirely at ≤1 tab,
+      making the tab bar untestable otherwise.
+      Post-launch the real switch is `SKILL_TREE_ENABLED` → `true`.
+    - **Not yet playtested in a browser.**
 
 Guidance tuning knobs in one block, all single-line edits:
 
