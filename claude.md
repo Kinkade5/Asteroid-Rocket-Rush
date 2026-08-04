@@ -1,7 +1,7 @@
 # Rocket Rush
 
 Flappy-style web game: dodge asteroid pairs, collect coins, grab powerups.
-Mobile-first, PWA-enabled. Currently at v0.38.0.
+Mobile-first, PWA-enabled. Currently at v0.39.0.
 Shipping on Google Play as a TWA (`com.astralgamer.rocketrush`) — in closed testing.
 
 Architecture note (v0.24.0): no longer purely single-file — the global
@@ -77,6 +77,7 @@ Inside `index.html`:
 | `rocketRushMasterUpgrades.master_assist` | v0.35.0 — Master Assist tier 0-3 (integer, unlike the sibling capstone booleans) |
 | `rocketRushTutorialRewarded` | v0.36.0 — one-shot flag; tutorial completion bonus pays once ever |
 | `rocketRushCoinDoubler` | v0.38.0 — `{runs, day, grants}` for the dormant rewarded-ad coin doubler |
+| `rocketRushSkillTreeGrandfathered` | v0.39.0 — lines exempt from tree edges (written only once the tree is live) |
 
 ## Recent history (v0.18.0 → v0.29.0)
 
@@ -486,6 +487,54 @@ Inside `index.html`:
       still banks/scores the same raw value. Browser-verified: grant,
       persistence, cancel-pays-nothing, cap disabling the button, and the
       button hidden entirely without `?playtest=1`.
+28. **v0.39.0**: **Skill tree**, built dormant behind
+    `SKILL_TREE_AVAILABLE = false` (the `MASTER_SHOP_AVAILABLE` pattern).
+    The v0.33.0 hold above still stands for *shipping* it mid-closed-test;
+    this lands the whole feature in main without exposing it, so going live
+    post-launch is a one-line flip.
+    - **What it is**: the UPGRADES tab becomes one scrolling tree — a branch
+      per category, nodes chained by real prerequisite edges. Same 14
+      upgrades, same tiers, same costs, same save shape. Cards are the
+      existing `buildUpgradeCardHtml` output wrapped in `.skill-node`, so
+      purchases, refunds, NEW! badges and prereq rows work unchanged; the
+      tree is a *layout over the same cards*, not a parallel shop.
+    - **Topology is data**: `SKILL_TREE_BRANCHES` (order + chains) and
+      `SKILL_TREE_EDGES` (gates, keyed by dependent id). Retuning the tree
+      is a single-array edit, and the drawn connectors can't disagree with
+      the gating because both walk the same structure. Hangar folds in as a
+      fifth branch and its standalone tab disappears (one route, not two);
+      MASTER keeps its own tab — different currency, different card shape.
+    - **Edge rule**: each branch's first node is ungated and every later
+      node needs only a *shallow* stake in the one before (T1, except
+      Reactive at T2). A guided ordering, not a toll road — verified that a
+      full clear still costs exactly 106,300 coins, unchanged. Gating
+      reorders purchases; it never taxes them.
+    - **`double_platinum` is deliberately NOT in `SKILL_TREE_EDGES`** — it
+      carries its own v0.33.0 `prereq`, which is live in the shipped game
+      and must keep applying with the flag off. `effectivePrereq()` reads
+      the edge table first, then falls through to `def.prereq`.
+    - **Grandfathering** (`rocketRushSkillTreeGrandfathered`): the first
+      time the tree is *actually live*, snapshot every line already above
+      T0 and exempt those from their edges forever. Without it, a save
+      sitting on Reactive T2 with Overcharge T0 would open the shop to a
+      LOCKED card on an upgrade it already owns and couldn't finish the
+      line — a wall dropped in front of a mid-progression player. Snapshot
+      timing is the subtle part: it reads `{}` and writes nothing while the
+      flag is false, because snapshotting at v0.39.0 *install* would leave
+      every tier bought between now and the flip outside the exemption and
+      re-create the exact wall. The honest grandfather point is when gating
+      begins.
+    - Verified by a harness that extracts the real `UPGRADE_DEFS`,
+      `SKILL_TREE_*` tables and prereq functions out of index.html: 132
+      checks covering topology integrity, edges pointing only *backward
+      within a branch* (the property that guarantees the tree completes),
+      exhaustive flag-off parity with v0.33.0 (only platinum ever gated),
+      every edge releasing exactly on its tier, all 42 tiers reachable at
+      unchanged cost, and grandfathering that exempts invested lines
+      without leaking to untouched ones.
+    - **Not yet playtested in a browser** — flag is off, so nothing reaches
+      testers. Flip `SKILL_TREE_AVAILABLE` to `true` in DevTools (or the
+      source) to try it.
 
 Guidance tuning knobs in one block, all single-line edits:
 
