@@ -1,7 +1,7 @@
 # Rocket Rush
 
 Flappy-style web game: dodge asteroid pairs, collect coins, grab powerups.
-Mobile-first, PWA-enabled. Currently at v0.37.0.
+Mobile-first, PWA-enabled. Currently at v0.38.0.
 Shipping on Google Play as a TWA (`com.astralgamer.rocketrush`) — in closed testing.
 
 Architecture note (v0.24.0): no longer purely single-file — the global
@@ -76,6 +76,7 @@ Inside `index.html`:
 | `rocketRushMasterMilestoneIdx` | v0.33.0 — highest Master ✦ milestone already paid |
 | `rocketRushMasterUpgrades.master_assist` | v0.35.0 — Master Assist tier 0-3 (integer, unlike the sibling capstone booleans) |
 | `rocketRushTutorialRewarded` | v0.36.0 — one-shot flag; tutorial completion bonus pays once ever |
+| `rocketRushCoinDoubler` | v0.38.0 — `{runs, day, grants}` for the dormant rewarded-ad coin doubler |
 
 ## Recent history (v0.18.0 → v0.29.0)
 
@@ -437,6 +438,54 @@ Inside `index.html`:
       re-run clean.
     - **Tuning numbers are still guesses** — the ease windows and the 3s
       read time are all single-line edits.
+27. **v0.38.0**: **Rewarded-ad coin doubler** — prototype, dormant behind
+    `AD_REWARDS_ENABLED = false`. Watch a rewarded ad, bank 2× coins for
+    your next 3 runs. Also introduces `TEST_PLAYTEST_MODE` (`?playtest=1`)
+    to main — PR #28 declares an identical constant, so its rebase should
+    resolve the duplicate down to this one.
+    - **The constraint the whole design turns on**: coin pickups feed BOTH
+      systems from one number —
+      `const gained = addScore(c.value)` → score → **leaderboard**, and
+      `runCoins += c.value` → wallet. So the obvious implementation
+      (double the pickup) would have doubled the player's *ranked* score
+      and made the global board watch-to-win. Instead the multiplier is
+      applied **only at the banking step in `gameOver()`**, where `score`
+      has already been finalised and is not referenced — the separation is
+      structural, not a matter of remembering. The inverse already exists
+      as precedent: the 2× powerup and Stellar Surplus both scale score
+      while leaving the wallet untouched.
+    - **`lifetimeCoins` is credited RAW, never doubled.** Lifetime drives
+      the NG+ reveal and the ✦ meter, so doubling it would let ads buy
+      Stars and therefore Master capstones — selling progression rather
+      than convenience. Same rule as the respec refund (v0.29.0) and the
+      tutorial bonus (v0.36.0).
+    - **Daily cap** (`COIN_DOUBLER_MAX_DAILY = 3`, ledger keyed on the
+      local calendar date) because v0.33.0 already proved this economy
+      breaks when a reward loop has no ledger. Max 9 doubled runs/day.
+    - Charges are consumed **in the banking path only**, so abandoned runs
+      and tutorial runs (which never bank) can't burn a charge.
+    - The ad itself is a **simulated panel** — no ad network is contacted.
+      `grantCoinDoubler()` is deliberately free of ad-SDK detail so a real
+      provider is a one-line call-site swap.
+    - **TWA constraint worth remembering**: AdMob is a native Android SDK
+      and a TWA has no native surface to host it. The realistic routes are
+      H5 Games Ads (AdSense) for ads, and the **Digital Goods API +
+      Payment Request** for IAP — the latter is Google's purpose-built
+      path for TWAs, which makes IAP *easier* than ads here.
+    - **Store listing currently contradicts this**: `play-store-phase-d.md`
+      declares "Contains ads: No", and the description says "Free. No ads.
+      No in-app purchases." Both need changing before any of this ships,
+      and it should be decided *before* production release rather than
+      after — users who install on that promise will review accordingly.
+    - Verified by a harness: 29 checks covering grant/consume lifecycle,
+      the daily cap and its date rollover, total inertness with the flag
+      off (even with runs forced into the save), and source-level
+      assertions that `coinBankMultiplier()` has exactly one call site,
+      that it feeds `bankedCoins` and not `lifetimeCoins`, that
+      `addScore()` references no doubler symbol, and that the coin pickup
+      still banks/scores the same raw value. Browser-verified: grant,
+      persistence, cancel-pays-nothing, cap disabling the button, and the
+      button hidden entirely without `?playtest=1`.
 
 Guidance tuning knobs in one block, all single-line edits:
 
