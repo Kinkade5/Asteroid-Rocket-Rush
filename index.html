@@ -178,6 +178,62 @@
     box-shadow: 0 0 18px 1px rgba(138, 255, 193, 0.28);
   }
 
+  /* === v0.38.0 — coin doubler (prototype) === */
+  .ad-reward-btn {
+    margin-top: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    border-color: rgba(255, 216, 107, 0.45);
+    color: #ffd86b;
+  }
+  .ad-reward-btn[disabled] { opacity: 0.45; }
+  .ad-reward-main { font-size: 14px; letter-spacing: 1.4px; }
+  .ad-reward-sub {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: #8a93c0;
+    text-transform: none;
+  }
+  /* In-run indicator that the doubler is burning a charge. Sits with the
+     other powerup badges so it reads as run state, not menu chrome. */
+  .pu-badge.coin-doubler { color: #ffd86b; border-color: rgba(255,216,107,0.5); }
+
+  /* Simulated ad — deliberately plain. It is a stand-in, and dressing it up
+     would make it easy to mistake for a shipped ad experience. */
+  .ad-sim-scrim {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(3, 4, 10, 0.94);
+    z-index: 14;
+  }
+  .ad-sim-scrim.active { display: flex; }
+  .ad-sim-panel { width: 100%; max-width: 300px; text-align: center; }
+  .ad-sim-tag {
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: #6f79a8;
+    margin-bottom: 14px;
+  }
+  .ad-sim-timer {
+    font-size: 54px;
+    font-weight: 800;
+    color: #fff;
+    line-height: 1;
+  }
+  .ad-sim-note {
+    margin-top: 14px;
+    font-size: 11px;
+    line-height: 1.5;
+    color: #8a93c0;
+  }
+  .ad-sim-skip { margin-top: 20px; font-size: 11px; }
+
   /* === v0.36.0 — Tutorial lesson card === */
   /* Sits above the countdown/ready layer (z 5) because it can appear over a
      frozen run. Unlike those two this one IS interactive: the scrim takes
@@ -1858,6 +1914,12 @@
       <span class="tutorial-btn-main">TUTORIAL 🎓</span>
       <span class="tutorial-btn-sub">New here? Learn the basics first</span>
     </button>
+    <!-- v0.38.0 — rewarded-ad coin doubler (prototype). Hidden unless
+         AD_REWARDS_AVAILABLE; label is rewritten by refreshAdRewardUI(). -->
+    <button class="btn btn-secondary ad-reward-btn" id="adRewardBtn" style="display:none">
+      <span class="ad-reward-main" id="adRewardMain">▶ WATCH AD · 2× COINS</span>
+      <span class="ad-reward-sub" id="adRewardSub">3 runs · banked coins only</span>
+    </button>
     <!-- v0.24.0 — global leaderboard entry point. Opens the leaderboard overlay. -->
     <button class="btn btn-secondary" id="leaderboardBtn" style="margin-top: 14px">LEADERBOARD 🏆</button>
     <!-- PHASE 2 — vague progress scoreboard toward undisclosed (NG+) unlock.
@@ -1870,7 +1932,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.37.0</div>
+    <div class="version-badge" id="versionBadge">v0.38.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -1928,6 +1990,17 @@
   <div id="readyPrompt" class="ready-prompt">
     <div class="ready-prompt-main">TAP TO START</div>
     <div class="ready-prompt-sub">Hold to thrust</div>
+  </div>
+  <!-- v0.38.0 — SIMULATED rewarded ad (prototype only). Stands in for a real
+       provider's fullscreen unit so the flow can be evaluated end to end.
+       Nothing here talks to any ad network. -->
+  <div id="adSimScrim" class="ad-sim-scrim">
+    <div class="ad-sim-panel">
+      <div class="ad-sim-tag">SIMULATED AD</div>
+      <div class="ad-sim-timer" id="adSimTimer">3</div>
+      <div class="ad-sim-note">A real rewarded unit replaces this panel.<br>Reward is granted only on completion.</div>
+      <button class="btn btn-secondary ad-sim-skip" id="adSimSkip">CANCEL (NO REWARD)</button>
+    </div>
   </div>
   <!-- Tutorial lesson card (v0.36.0) — shown in STATE.TUTORIAL_INFO with the
        world frozen behind it. Scrim is interactive so a tap anywhere
@@ -2043,7 +2116,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.37.0';
+  const GAME_VERSION = 'v0.38.0';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -2063,6 +2136,56 @@
   // once NG+ unlocks (see ngPlusUnlocked()). The mechanics behind it
   // (Phoenix/Surplus/Autopilot) shipped dormant in v0.20.0–v0.22.0.
   const MASTER_SHOP_AVAILABLE = true;
+
+  // ======================================================================
+  // v0.38.0 — playtest switch
+  // ======================================================================
+  // `?playtest=1` turns on dormant features for hands-on evaluation, for
+  // that page load only. A URL param rather than a hardcoded `true` because
+  // there's no DevTools on a phone and this is a mobile-first game — a const
+  // you can't flip on the target device isn't testable there. It also leaves
+  // no cleanup debt, which a temporary hardcoded flag does (v0.28.4's
+  // diagnostic badge needed its own release, v0.28.7, to remove).
+  //
+  // NOTE: PR #28 (skill tree) introduces an identical constant on its own
+  // branch. When that rebases onto main the duplicate declaration should be
+  // resolved down to this one.
+  const TEST_PLAYTEST_MODE = (() => {
+    try { return new URLSearchParams(location.search).has('playtest'); }
+    catch (_) { return false; }
+  })();
+
+  // ======================================================================
+  // v0.38.0 — REWARDED-AD COIN DOUBLER (prototype, dormant)
+  // ======================================================================
+  // Opt-in reward: watch a rewarded ad, bank 2x coins for your next N runs.
+  //
+  // THE CONSTRAINT THIS IS BUILT AROUND
+  // -----------------------------------
+  // Coin pickups feed BOTH systems from the same number:
+  //     const gained = addScore(c.value);   // → score → leaderboard
+  //     runCoins += c.value;                // → wallet
+  // Doubling the pickup value would therefore double the player's *ranked*
+  // score and make the global leaderboard watch-to-win. Instead the
+  // multiplier is applied at the BANKING step in gameOver() and nowhere
+  // else, so score is never in its code path — structurally, not by
+  // discipline. The inverse already exists as precedent: the 2x powerup and
+  // Stellar Surplus both scale score while leaving the wallet untouched.
+  //
+  // lifetimeCoins is credited RAW, never doubled. Lifetime drives the NG+
+  // reveal and the ✦ meter, so doubling it would let ads buy Stars and
+  // therefore Master capstones — selling progression rather than
+  // convenience. Same rule the respec refund (v0.29.0) and the tutorial
+  // bonus (v0.36.0) already follow.
+  //
+  // The daily cap exists because v0.33.0 proved this economy breaks when a
+  // reward loop has no ledger.
+  const AD_REWARDS_ENABLED   = false;   // ← the post-launch switch
+  const AD_REWARDS_AVAILABLE = AD_REWARDS_ENABLED || TEST_PLAYTEST_MODE;
+  const COIN_DOUBLER_MULT      = 2;   // banked-coin multiplier while active
+  const COIN_DOUBLER_RUNS      = 3;   // runs granted per ad watched
+  const COIN_DOUBLER_MAX_DAILY = 3;   // grants per calendar day
+
   // v0.25.0 — meter economy retuned (was a flat 100k per ✦). NG+ now
   // reveals at the FIRST meter star, and the meter schedule is:
   //   star 1 at 25k lifetime coins, then +1✦ every 50k after.
@@ -2736,6 +2859,13 @@
   const tutorialCardBody   = document.getElementById('tutorialCardBody');
   const tutorialCardTip    = document.getElementById('tutorialCardTip');
   const tutorialCardCont   = document.getElementById('tutorialCardCont'); // v0.37.0
+  // v0.38.0 — coin doubler prototype
+  const adRewardBtn   = document.getElementById('adRewardBtn');
+  const adRewardMain  = document.getElementById('adRewardMain');
+  const adRewardSub   = document.getElementById('adRewardSub');
+  const adSimScrim    = document.getElementById('adSimScrim');
+  const adSimTimer    = document.getElementById('adSimTimer');
+  const adSimSkip     = document.getElementById('adSimSkip');
   const tutorialToast      = document.getElementById('tutorialToast');
   const tutorialToastSub   = document.getElementById('tutorialToastSub');
   const countdownNumberEl = document.getElementById('countdownNumber');
@@ -3536,6 +3666,80 @@
   }
   function saveBankedCoins() {
     try { localStorage.setItem('rocketRushBankedCoins', String(bankedCoins)); } catch (_) {}
+  }
+
+  // ======================================================================
+  // v0.38.0 — coin doubler state (prototype)
+  // ======================================================================
+  // `runs` is how many scored runs still bank at COIN_DOUBLER_MULT.
+  // `day`/`grants` is the daily-cap ledger, keyed on the local calendar date
+  // so it self-resets at midnight without needing a scheduled job.
+  let coinDoublerRuns = 0;
+  let coinDoublerDay = '';
+  let coinDoublerGrants = 0;
+  loadCoinDoubler();
+
+  function todayKey() {
+    const d = new Date();
+    // Local date, not UTC: a cap that rolls over at 3am local would read as
+    // broken to the player it applies to.
+    return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+  }
+  function loadCoinDoubler() {
+    try {
+      const raw = localStorage.getItem('rocketRushCoinDoubler');
+      if (!raw) return;
+      const p = JSON.parse(raw) || {};
+      // Clamp on load for the same reason loadUpgrades() does: a hand-edited
+      // or corrupt save must not grant an unbounded multiplier.
+      coinDoublerRuns = Math.max(0, Math.min(COIN_DOUBLER_RUNS * COIN_DOUBLER_MAX_DAILY,
+                                             Math.floor(Number(p.runs) || 0)));
+      coinDoublerDay = typeof p.day === 'string' ? p.day : '';
+      coinDoublerGrants = Math.max(0, Math.floor(Number(p.grants) || 0));
+    } catch (_) { /* corrupt save — start clean */ }
+  }
+  function saveCoinDoubler() {
+    try {
+      localStorage.setItem('rocketRushCoinDoubler', JSON.stringify({
+        runs: coinDoublerRuns, day: coinDoublerDay, grants: coinDoublerGrants,
+      }));
+    } catch (_) {}
+  }
+
+  // How many grants the player has left today (rolls over on date change).
+  function coinDoublerGrantsLeft() {
+    if (coinDoublerDay !== todayKey()) return COIN_DOUBLER_MAX_DAILY;
+    return Math.max(0, COIN_DOUBLER_MAX_DAILY - coinDoublerGrants);
+  }
+  function coinDoublerActive() {
+    return AD_REWARDS_AVAILABLE && coinDoublerRuns > 0;
+  }
+  // The multiplier the NEXT banking step will use. Deliberately a getter
+  // rather than a stored number, so nothing can hold a stale 2x.
+  function coinBankMultiplier() {
+    return coinDoublerActive() ? COIN_DOUBLER_MULT : 1;
+  }
+
+  // What a completed rewarded ad calls. Kept free of any ad-SDK detail so
+  // swapping in a real provider later is a one-line call site change.
+  function grantCoinDoubler() {
+    if (!AD_REWARDS_AVAILABLE) return false;
+    if (coinDoublerGrantsLeft() <= 0) return false;
+    const today = todayKey();
+    if (coinDoublerDay !== today) { coinDoublerDay = today; coinDoublerGrants = 0; }
+    coinDoublerGrants++;
+    coinDoublerRuns += COIN_DOUBLER_RUNS;
+    saveCoinDoubler();
+    return true;
+  }
+
+  // Consume one charge. Called from the banking path only, so abandoned or
+  // tutorial runs (which never bank) can't burn a charge the player paid
+  // attention for.
+  function consumeCoinDoublerRun() {
+    if (coinDoublerRuns <= 0) return;
+    coinDoublerRuns--;
+    saveCoinDoubler();
   }
 
   // ======================================================================
@@ -5148,6 +5352,26 @@
     });
   }
 
+  // v0.38.0 — coin doubler button. Awaits the (simulated) ad and only grants
+  // on completion; a cancelled ad pays nothing, matching real rewarded units.
+  if (adRewardBtn) {
+    adRewardBtn.addEventListener('pointerdown', (e) => {
+      if (adRewardBtn.disabled) return;
+      if (performance.now() < inputLockUntil) return;
+      e.stopPropagation();
+      e.preventDefault();
+      ensureAudio();
+      Audio.play.uiClick();
+      playSimulatedAd().then(completed => {
+        if (completed && grantCoinDoubler()) {
+          Audio.play.coinGold();
+          if (navigator.vibrate) navigator.vibrate(20);
+        }
+        refreshAdRewardUI();
+      });
+    });
+  }
+
   // Lesson-card dismiss. Bound on the scrim (which is pointer-interactive,
   // unlike the countdown/ready overlays) so the tap lands here and never
   // reaches the canvas thrust handler underneath.
@@ -6474,6 +6698,60 @@
   // *finished* it is the thing that means you no longer need pointing at it.
   // Called on load and on every return to the menu, so finishing the
   // tutorial demotes the button immediately.
+  // ======================================================================
+  // v0.38.0 — coin doubler UI (prototype)
+  // ======================================================================
+  // Length of the stand-in ad. Real rewarded units are ~30s; this is short
+  // so the prototype is testable without a 30-second wait every attempt.
+  const SIMULATED_AD_MS = 3000;
+  let adSimGen = 0;
+
+  function refreshAdRewardUI() {
+    if (!adRewardBtn) return;
+    if (!AD_REWARDS_AVAILABLE) { adRewardBtn.style.display = 'none'; return; }
+    adRewardBtn.style.display = '';
+    const left = coinDoublerGrantsLeft();
+    if (coinDoublerRuns > 0) {
+      adRewardMain.textContent = `${COIN_DOUBLER_MULT}× COINS ACTIVE`;
+      adRewardSub.textContent =
+        `${coinDoublerRuns} run${coinDoublerRuns === 1 ? '' : 's'} left` +
+        (left > 0 ? ` · tap to add ${COIN_DOUBLER_RUNS} more` : ' · daily limit reached');
+    } else if (left > 0) {
+      adRewardMain.textContent = `▶ WATCH AD · ${COIN_DOUBLER_MULT}× COINS`;
+      adRewardSub.textContent = `${COIN_DOUBLER_RUNS} runs · banked coins only, not score`;
+    } else {
+      adRewardMain.textContent = 'DAILY LIMIT REACHED';
+      adRewardSub.textContent = `Resets tomorrow · ${COIN_DOUBLER_MAX_DAILY} per day`;
+    }
+    adRewardBtn.disabled = left <= 0;
+  }
+
+  // Play the stand-in ad. Resolves true only if it ran to completion —
+  // cancelling grants nothing, which is how a real rewarded unit behaves.
+  function playSimulatedAd() {
+    return new Promise(resolve => {
+      const gen = ++adSimGen;
+      let leftMs = SIMULATED_AD_MS;
+      adSimTimer.textContent = String(Math.ceil(leftMs / 1000));
+      adSimScrim.classList.add('active');
+      const finish = (ok) => {
+        if (gen !== adSimGen) return;
+        adSimGen++;                      // invalidate any pending tick
+        adSimScrim.classList.remove('active');
+        resolve(ok);
+      };
+      adSimSkip.onclick = () => finish(false);
+      const tick = () => {
+        if (gen !== adSimGen) return;
+        leftMs -= 100;
+        if (leftMs <= 0) { finish(true); return; }
+        adSimTimer.textContent = String(Math.ceil(leftMs / 1000));
+        setTimeout(tick, 100);
+      };
+      setTimeout(tick, 100);
+    });
+  }
+
   function refreshTutorialCta() {
     if (!tutorialBtn) return;
     let done = false;
@@ -6702,6 +6980,7 @@
     // Esc, death, completion) funnels through goToMenu(), so no route can
     // leave 'tutorial' as the active tier. No-op outside the tutorial.
     endTutorialMode();
+    refreshAdRewardUI();   // v0.38.0 — runs-left count changes after a run
     hideOverlay(gameOverScreen);
     showOverlay(startScreen);
     // Hide the unlock toast if it's still visible from a Master unlock
@@ -7010,13 +7289,28 @@
     // upgrade shop. Tier-scaled coin values already include the multiplier,
     // so higher tiers naturally bank faster.
     const coinsThisRun = runCoins;
-    bankedCoins += coinsThisRun;
+    // v0.38.0 — the ONLY site where the rewarded-ad multiplier applies.
+    // `score` has already been finalised above and is not referenced here,
+    // so the doubler cannot reach the leaderboard by construction. Multiply
+    // the wallet credit, never the pickup value.
+    const bankMult = coinBankMultiplier();
+    const bankedThisRun = coinsThisRun * bankMult;
+    bankedCoins += bankedThisRun;
     saveBankedCoins();
     // Lifetime coins — monotonic total, drives main-menu NG+ scoreboard.
     // Never decreases (shop spending only affects bankedCoins).
+    // v0.38.0 — credited RAW, deliberately NOT multiplied: lifetime drives
+    // the NG+ reveal and the ✦ meter, so doubling it would let ads buy
+    // Stars and therefore Master capstones. Convenience, not progression.
     lifetimeCoins += coinsThisRun;
     saveLifetimeCoins();
-    coinsEarnedText.textContent = `+${coinsThisRun.toLocaleString()} banked (${bankedCoins.toLocaleString()} total)`;
+    if (bankMult > 1) {
+      consumeCoinDoublerRun();
+      coinsEarnedText.textContent =
+        `+${bankedThisRun.toLocaleString()} banked (${bankMult}× — ${coinDoublerRuns} run${coinDoublerRuns === 1 ? '' : 's'} left)`;
+    } else {
+      coinsEarnedText.textContent = `+${bankedThisRun.toLocaleString()} banked (${bankedCoins.toLocaleString()} total)`;
+    }
 
     // === v0.23.0 — Star income (NG+) ===
     // Order matters: bank coins first (above) so grantMeterStars() sees the
@@ -8253,6 +8547,12 @@
     // v0.36.0 — and TUTORIAL_INFO, so the shield pips stay visible behind
     // the card that is explaining them.
     if (state === STATE.PLAY || state === STATE.DEAD || state === STATE.COUNTDOWN || state === STATE.PAUSED || state === STATE.READY || state === STATE.TUTORIAL_INFO) {
+      // v0.38.0 — coin doubler indicator. Shown while a charge is being
+      // spent so the player can see what they watched the ad for. Says
+      // COINS explicitly: this must never be mistaken for a score bonus.
+      if (coinDoublerActive()) {
+        html += `<div class="pu-badge coin-doubler">${COIN_DOUBLER_MULT}× COINS</div>`;
+      }
       const maxShields = getMaxShields();
       let pips = '';
       for (let i = 0; i < maxShields; i++) {
@@ -8474,6 +8774,7 @@
   refreshScoreboardUI();  // Phase 2/4B: mystery bar, or ✦ Star meter once unlocked
   renderDifficultySelector();  // build the 4 tiles (Master locked unless unlocked)
   refreshTutorialCta();  // v0.37.0 — promote the tutorial button until it's done
+  refreshAdRewardUI();   // v0.38.0 — coin doubler button (hidden unless enabled)
   if (revealOnLoad) {
     // Land the toast a beat after the menu paints so it reads clearly.
     setTimeout(() => {
