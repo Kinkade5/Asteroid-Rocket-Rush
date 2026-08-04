@@ -1115,6 +1115,88 @@
     background: rgba(255,255,255,0.15);
     border-radius: 3px;
   }
+  /* === v0.39.0 — Skill tree (dormant behind SKILL_TREE_AVAILABLE) === */
+  /* One scrolling column of branches. Each branch is a chain of upgrade
+     cards joined by a drawn connector, so the dependency order is legible
+     without a canvas or an SVG layout pass — the chain IS the edge. Built
+     on the existing .upgrade-card so every card feature (NEW! badge, tier
+     pips, refund bar, prereq row) works here with no duplicate markup. */
+  .skill-tree {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    width: 92%;
+    max-width: 420px;
+    overflow-y: auto;
+    max-height: 60vh;
+    padding: 2px;
+  }
+  .skill-tree.hidden-view { display: none; }
+  .skill-tree::-webkit-scrollbar { width: 6px; }
+  .skill-tree::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.15);
+    border-radius: 3px;
+  }
+  .skill-branch {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  /* Branch heading: the category's own icon + color, with a short rule
+     leading into the first node so the branch reads as rooted. */
+  .skill-branch-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 2px 8px;
+  }
+  .skill-branch-icon { font-size: 18px; line-height: 1; }
+  .skill-branch-name {
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 1.6px;
+  }
+  .skill-branch-progress {
+    margin-left: auto;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px;
+    color: #9aa3d6;
+    opacity: 0.7;
+  }
+  .skill-branch-progress.maxed { color: #ffd86b; opacity: 1; }
+  /* A node is a card plus the connector segment above it. The first node in
+     a branch has no incoming edge, so it draws no connector. */
+  .skill-node { position: relative; }
+  .skill-node + .skill-node { margin-top: 20px; }
+  .skill-node + .skill-node::before {
+    content: '';
+    position: absolute;
+    left: 26px;
+    top: -20px;
+    width: 2px;
+    height: 20px;
+    background: var(--skill-edge-color, rgba(255,255,255,0.18));
+    border-radius: 1px;
+  }
+  /* Unmet edge reads as a dashed, dimmed line — the visual difference
+     between "you have not walked this path yet" and "this path is open". */
+  .skill-node.locked + .skill-node::before,
+  .skill-node.locked::before {
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(255,255,255,0.22) 0 3px,
+      transparent 3px 6px
+    );
+  }
+  .skill-node.locked .upgrade-card {
+    opacity: 0.55;
+    border-style: dashed;
+  }
+  /* Maxed nodes get a faint gold edge so a finished branch is scannable. */
+  .skill-node.maxed .upgrade-card {
+    border-color: rgba(255, 216, 107, 0.3);
+  }
+
   .upgrade-card {
     position: relative; /* anchor for v0.16.0 NEW! badge positioned absolutely */
     display: grid;
@@ -1932,7 +2014,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.38.0</div>
+    <div class="version-badge" id="versionBadge">v0.39.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -2043,6 +2125,9 @@
     <div class="shop-list" id="shopHangarList"></div>
     <!-- MASTER tab (v0.23.0): flat list of Star-bought capstones -->
     <div class="shop-list" id="shopMasterList"></div>
+    <!-- UPGRADES tab, tree mode (v0.39.0): replaces the category grid and
+         the drill-in list when SKILL_TREE_AVAILABLE is on. Inert otherwise. -->
+    <div class="skill-tree hidden-view" id="shopSkillTree"></div>
     <button class="btn btn-secondary" id="shopCloseBtn" style="margin-top: 16px">CLOSE</button>
   </div>
 
@@ -2116,7 +2201,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.38.0';
+  const GAME_VERSION = 'v0.39.0';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -2185,6 +2270,46 @@
   const COIN_DOUBLER_MULT      = 2;   // banked-coin multiplier while active
   const COIN_DOUBLER_RUNS      = 3;   // runs granted per ad watched
   const COIN_DOUBLER_MAX_DAILY = 3;   // grants per calendar day
+
+  // ======================================================================
+  // v0.39.0 — SKILL TREE (feature-flagged, hidden)
+  // ======================================================================
+  // Restructures the UPGRADES tab from "category grid → drill into a flat
+  // card list" into a single scrolling tree: one branch per category, nodes
+  // chained by real prerequisite edges (see SKILL_TREE_EDGES). Same 14
+  // upgrades, same tiers, same costs, same save shape — what changes is the
+  // navigation and, when the flag is on, which purchases are legal.
+  //
+  // Why flagged off: claude.md held the skill tree until after launch
+  // because it "restructures the whole shop and every save's upgrade
+  // layout", and we're mid-closed-test on Google Play. Following the
+  // MASTER_SHOP_AVAILABLE precedent — the whole feature lives in main,
+  // dormant, and post-launch this becomes a one-line flip.
+  //
+  // The flag gates BOTH the tree UI and the new prereq edges. With it off,
+  // upgradePrereqMet() behaves exactly as v0.33.0 did (only Platinum's
+  // own `prereq` applies), so testers on the current build see zero change.
+  //
+  // ---- Playtest affordance -------------------------------------------
+  // `?playtest=1` (TEST_PLAYTEST_MODE, declared with the coin doubler
+  // above) turns the tree on AND lifts the NG+ gate on the MASTER tab, for
+  // that page load only.
+  //
+  // This branch originally declared its own copy of that constant; the
+  // rebase onto v0.38.0 collapsed the two, since a second `const` of the
+  // same name in this scope is a SyntaxError that would break the whole
+  // game rather than just the feature.
+  //
+  // Why MASTER specifically: in tree mode HANGAR folds into the tree, so a
+  // save without NG+ would see a single tab — and renderShopSegmentedControl
+  // hides the control entirely at <= 1 tab. Without the lift you can't see
+  // the tab bar in the preview at all. It reveals a shop tab and grants no
+  // coins or ✦, so there's nothing to exploit if a player finds it.
+
+  // Post-launch, flip this one line to true. TEST_PLAYTEST_MODE is the
+  // preview override and is expected to stay as it is.
+  const SKILL_TREE_ENABLED = false;
+  const SKILL_TREE_AVAILABLE = SKILL_TREE_ENABLED || TEST_PLAYTEST_MODE;
 
   // v0.25.0 — meter economy retuned (was a flat 100k per ✦). NG+ now
   // reveals at the FIRST meter star, and the meter schedule is:
@@ -2904,6 +3029,7 @@
   const shopSegmentedEl = document.getElementById('shopSegmented');
   const shopHangarListEl = document.getElementById('shopHangarList');
   const shopMasterListEl = document.getElementById('shopMasterList'); // v0.23.0
+  const shopSkillTreeEl = document.getElementById('shopSkillTree');   // v0.39.0
   const shopWallet = document.getElementById('shopWallet');
   const shopWalletIcon = document.getElementById('shopWalletIcon'); // v0.23.0
   const shopWalletBadge = document.getElementById('shopWalletBadge');
@@ -3602,6 +3728,65 @@
       tagline: 'Duration, guidance, stacking' },
   ];
 
+  // ======================================================================
+  // v0.39.0 — SKILL TREE topology (inert while SKILL_TREE_AVAILABLE=false)
+  // ======================================================================
+  // Hangar isn't in CATEGORIES (it has its own tab rather than a grid
+  // tile), but in tree mode it folds in as a fifth branch — one tree that
+  // holds all 14 upgrades reads better than a tree plus an orphan tab.
+  // This is its display meta; the palette is the cool blue-grey of the
+  // rocket itself, distinct from the four powerup-derived category colors.
+  const HANGAR_BRANCH_META = { id: 'hangar', name: 'Hangar', icon: '🚀',
+    color: '#b9c4ff', tagline: 'Thrust, gravity, handling' };
+
+  // Branch order = top-to-bottom display order, and the node arrays are the
+  // chain order within each branch. Topology is declared here as data
+  // rather than derived from UPGRADE_DEFS order, so retuning the tree is a
+  // single-array edit and the drawn edges can never disagree with the
+  // gating (renderSkillTree walks this, SKILL_TREE_EDGES enforces it).
+  const SKILL_TREE_BRANCHES = [
+    { cat: 'shield',     nodes: ['shield_hull', 'shield_overcharge', 'shield_reactive'] },
+    { cat: 'magnet',     nodes: ['magnet_radius', 'magnet_strength', 'magnet_duration'] },
+    { cat: 'double',     nodes: ['double_power', 'double_duration', 'double_platinum'] },
+    { cat: 'hyperfocus', nodes: ['hyperfocus_duration', 'hyperfocus_guidance', 'hyperfocus_tempo'] },
+    { cat: 'hangar',     nodes: ['hangar_propulsion', 'hangar_integrity'] },
+  ];
+
+  // Prerequisite edges, keyed by the DEPENDENT upgrade's id. Same shape as
+  // the `prereq` field v0.33.0 put on UPGRADE_DEFS, and read through the
+  // same upgradePrereqMet() — these are just the ones that only apply in
+  // tree mode.
+  //
+  // Design rule: every branch's first node is ungated, and each subsequent
+  // node needs only a SHALLOW investment in the one before it (T1, except
+  // Reactive which wants T2). That keeps the tree a guided ordering rather
+  // than a toll road — a player reaching the end of a branch spends barely
+  // more than today, but they meet the cheap foundational upgrades first
+  // instead of rushing the flashy terminal one.
+  //
+  // Deliberately NOT here: double_platinum. It already carries its own
+  // `prereq` (Multiplier T2) from v0.33.0, which is live in the shipped
+  // game and must keep applying with the flag off. upgradePrereqMet()
+  // falls through to def.prereq, so platinum needs no duplicate entry.
+  const SKILL_TREE_EDGES = {
+    shield_overcharge:   { line: 'shield',     stat: 'hull',       tier: 1, label: 'Reinforced Hull Tier 1' },
+    shield_reactive:     { line: 'shield',     stat: 'overcharge', tier: 2, label: 'Overcharged Shields Tier 2' },
+    magnet_strength:     { line: 'magnet',     stat: 'radius',     tier: 1, label: 'Range Tier 1' },
+    magnet_duration:     { line: 'magnet',     stat: 'strength',   tier: 1, label: 'Strength Tier 1' },
+    double_duration:     { line: 'double',     stat: 'power',      tier: 1, label: 'Multiplier Tier 1' },
+    hyperfocus_guidance: { line: 'hyperfocus', stat: 'duration',   tier: 1, label: 'Focus Duration Tier 1' },
+    hyperfocus_tempo:    { line: 'hyperfocus', stat: 'guidance',   tier: 1, label: 'Guidance System Tier 1' },
+    hangar_integrity:    { line: 'hangar',     stat: 'propulsion', tier: 1, label: 'Propulsion Core Tier 1' },
+  };
+
+  // Display meta for a branch — CATEGORIES for the four grid categories,
+  // the hangar constant for the folded-in fifth.
+  function branchMeta(catId) {
+    return catId === 'hangar'
+      ? HANGAR_BRANCH_META
+      : CATEGORIES.find(c => c.id === catId);
+  }
+
   // === Persistent currency ===
   // bankedCoins: wallet, spent in the shop. Grows by runCoins at end of run.
   // runCoins: coins picked up in the current run (count, not score value).
@@ -3628,6 +3813,45 @@
     hyperfocus: { duration: 0, guidance: 0, tempo: 0 },
   };
   let upgrades = loadUpgrades();
+
+  // ======================================================================
+  // v0.39.0 — skill-tree grandfathering
+  // ======================================================================
+  // The tree adds prerequisite edges to lines that were freely purchasable
+  // before it. Without a carve-out, an existing save sitting on (say)
+  // Reactive Shields T2 with Overcharged Shields at T0 would open the shop
+  // to a LOCKED card on an upgrade they already own and have been using —
+  // and be unable to finish the line until they back-filled a prerequisite
+  // they never needed. That's a wall dropped in front of a player mid-
+  // progression, which is exactly the kind of thing that sours a tester.
+  //
+  // So: the first time the tree is actually live, snapshot every node the
+  // player is already invested in (tier > 0) and exempt those from their
+  // edges permanently. Never revoke, never re-gate — the same principle
+  // v0.33.0 used when it gated platinum without touching existing owners.
+  //
+  // Snapshot timing is deliberate: this reads `{}` and writes nothing while
+  // SKILL_TREE_AVAILABLE is false. If it snapshotted at v0.39.0 install
+  // instead, every tier bought between now and the post-launch flag flip
+  // would fall outside the exemption and re-introduce the exact wall this
+  // exists to prevent. The honest grandfather point is when gating begins.
+  let skillTreeGrandfathered = loadSkillTreeGrandfathered();
+
+  function loadSkillTreeGrandfathered() {
+    if (!SKILL_TREE_AVAILABLE) return {};
+    try {
+      const raw = localStorage.getItem('rocketRushSkillTreeGrandfathered');
+      if (raw) return JSON.parse(raw) || {};
+    } catch (_) { /* fall through to a fresh snapshot */ }
+    const snap = {};
+    for (const def of UPGRADE_DEFS) {
+      if (upgrades[def.line][def.stat] > 0) snap[def.id] = true;
+    }
+    try {
+      localStorage.setItem('rocketRushSkillTreeGrandfathered', JSON.stringify(snap));
+    } catch (_) {}
+    return snap;
+  }
 
   function loadUpgrades() {
     try {
@@ -3775,9 +3999,21 @@
   // gates Full Autopilot behind Guidance T3) but for the regular tiered
   // shop, driven by an optional `prereq` field on the def. Upgrades without
   // one always pass, so this is inert for the other 13 lines.
+  //
+  // v0.39.0 — the def's own `prereq` is now one of two sources. In tree
+  // mode SKILL_TREE_EDGES supplies the rest; with the flag off this
+  // returns exactly what v0.33.0 returned (platinum's gate and nothing
+  // else), which is what keeps the dormant feature invisible to testers.
+  function effectivePrereq(def) {
+    if (SKILL_TREE_AVAILABLE && SKILL_TREE_EDGES[def.id]) return SKILL_TREE_EDGES[def.id];
+    return def.prereq || null;
+  }
+
   function upgradePrereqMet(def) {
-    if (!def.prereq) return true;
-    const p = def.prereq;
+    const p = effectivePrereq(def);
+    if (!p) return true;
+    // v0.39.0 — grandfathered lines ignore their edge (see below).
+    if (skillTreeGrandfathered[def.id]) return true;
     return upgrades[p.line][p.stat] >= p.tier;
   }
 
@@ -5626,13 +5862,21 @@
   // place means the rendering code stays simple.
   function getVisibleShopTabs() {
     return SHOP_TABS.filter(t => {
+      // v0.39.0 — in tree mode the Hangar upgrades are a branch of the
+      // tree, so the standalone tab would be a duplicate route to the same
+      // two cards. Folded in rather than shown twice. MASTER keeps its own
+      // tab regardless: different currency (✦), different card shape.
+      if (t.id === 'hangar') return !SKILL_TREE_AVAILABLE;
       if (t.id === 'master') {
         // v0.23.0 — gate is now NG+ (lifetime coins), NOT the Expert-score
         // Master-difficulty unlock. A player can reach 100k lifetime without
         // ever unlocking Master tier; they still get the shop (their Star
         // income is just meter-only until they unlock Master). Independent
         // gates by design — see ngplus-design.md §1.
-        return MASTER_SHOP_AVAILABLE && ngPlusUnlocked();
+        // v0.39.0 — TEST_PLAYTEST_MODE lifts the NG+ gate so the preview can
+        // exercise the tab bar (see the flag's comment block). Ownership and
+        // ✦ balance are untouched — this only makes the tab reachable.
+        return MASTER_SHOP_AVAILABLE && (ngPlusUnlocked() || TEST_PLAYTEST_MODE);
       }
       return true;
     });
@@ -5748,8 +5992,69 @@
     } else if (tabId === 'hangar') {
       renderHangarUpgrades();
     } else {
-      renderShopCategories();
+      renderUpgradesTab(); // v0.39.0 — tree or grid depending on the flag
     }
+  }
+
+  // ===== Shop rendering — UPGRADES tab entry point (v0.39.0) =====
+  // One door into the UPGRADES tab so callers (tab switch, back button,
+  // shop open, post-purchase refresh) never each need to know which layout
+  // is active. Flag off → the v0.33.0 category grid, untouched.
+  function renderUpgradesTab() {
+    if (SKILL_TREE_AVAILABLE) renderSkillTree();
+    else renderShopCategories();
+  }
+
+  // ===== Shop rendering — skill tree (v0.39.0) =====
+  // Branch-per-category, chained cards, drawn edges. Reuses
+  // buildUpgradeCardHtml + wireUpgradeBuyButtons wholesale, so purchases,
+  // refunds, NEW! badges and prereq rows behave identically to the grid —
+  // the tree is a layout over the same cards, not a parallel shop.
+  function renderSkillTree() {
+    refreshWalletUI();
+    renderShopSegmentedControl();
+    shopTitle.textContent = 'SKILL TREE';
+    // No drill-in level in tree mode — everything is on one surface.
+    shopBackBtn.classList.remove('visible');
+    shopCategoriesEl.classList.add('hidden-view');
+    shopList.classList.add('hidden-view');
+    if (shopHangarListEl) shopHangarListEl.classList.add('hidden-view');
+    if (shopMasterListEl) shopMasterListEl.classList.add('hidden-view');
+    if (!shopSkillTreeEl) return;
+    shopSkillTreeEl.classList.remove('hidden-view');
+
+    let html = '';
+    for (const branch of SKILL_TREE_BRANCHES) {
+      const meta = branchMeta(branch.cat);
+      if (!meta) continue; // defensive: unknown category id in the topology
+      const { owned, max } = getCategoryProgress(branch.cat);
+      const isMaxed = owned === max;
+
+      let nodesHtml = '';
+      for (const nodeId of branch.nodes) {
+        const def = UPGRADE_DEFS.find(d => d.id === nodeId);
+        if (!def) continue; // defensive: topology naming a removed upgrade
+        const tier = upgrades[def.line][def.stat];
+        const locked = !upgradePrereqMet(def);
+        const nodeMaxed = tier >= MAX_UPGRADE_TIER;
+        const classes = ['skill-node',
+          locked ? 'locked' : '',
+          nodeMaxed ? 'maxed' : ''].filter(Boolean).join(' ');
+        nodesHtml += `<div class="${classes}">${buildUpgradeCardHtml(def)}</div>`;
+      }
+
+      html += `
+        <div class="skill-branch" style="--skill-edge-color:${meta.color}55">
+          <div class="skill-branch-header">
+            <span class="skill-branch-icon">${meta.icon}</span>
+            <span class="skill-branch-name" style="color:${meta.color}">${meta.name.toUpperCase()}</span>
+            <span class="skill-branch-progress${isMaxed ? ' maxed' : ''}">${owned}/${max}</span>
+          </div>
+          ${nodesHtml}
+        </div>`;
+    }
+    shopSkillTreeEl.innerHTML = html;
+    wireUpgradeBuyButtons(shopSkillTreeEl);
   }
 
   // ===== Shop rendering — category grid =====
@@ -5760,6 +6065,9 @@
     shopBackBtn.classList.remove('visible');
     shopCategoriesEl.classList.remove('hidden-view');
     shopList.classList.add('hidden-view');
+    // v0.39.0 — hide the tree pane for the same reason the others are
+    // hidden here: panes persist across tab visits unless explicitly cleared.
+    if (shopSkillTreeEl) shopSkillTreeEl.classList.add('hidden-view');
     // Phase 2.5 — hide the hangar list when we're back on the UPGRADES
     // category grid (it would otherwise persist from a previous tab visit).
     if (shopHangarListEl) shopHangarListEl.classList.add('hidden-view');
@@ -5817,6 +6125,7 @@
     // since you can only drill into a category from the UPGRADES tab, but
     // hide explicitly in case future code flows this differently.
     if (shopHangarListEl) shopHangarListEl.classList.add('hidden-view');
+    if (shopSkillTreeEl) shopSkillTreeEl.classList.add('hidden-view'); // v0.39.0
     renderCategoryUpgrades(catId);
   }
 
@@ -5850,7 +6159,11 @@
     // v0.33.0 — prereq gate (currently only Platinum Extraction). Shown as
     // LOCKED with the reason, same shape as the Master tab's prereq card,
     // so an unbuyable upgrade always explains itself.
+    // v0.39.0 — read the reason through effectivePrereq(), not def.prereq:
+    // in tree mode the gate usually comes from SKILL_TREE_EDGES and the
+    // def has no `prereq` field at all.
     const prereqMet = upgradePrereqMet(def);
+    const prereqInfo = effectivePrereq(def);
 
     let btnHtml;
     if (isMaxed) {
@@ -5864,7 +6177,7 @@
     const valuesRow = isMaxed
       ? `<div class="upgrade-values">Max tier reached</div>`
       : !prereqMet
-        ? `<div class="upgrade-values master-prereq">🔒 Requires ${def.prereq.label}</div>`
+        ? `<div class="upgrade-values master-prereq">🔒 Requires ${prereqInfo ? prereqInfo.label : 'a prerequisite'}</div>`
         : `<div class="upgrade-values">${currentVal}<span class="arrow">→</span><span class="next">${nextVal}</span></div>`;
 
     // v0.16.0 — "NEW!" badge when this tier has become affordable for the
@@ -5954,6 +6267,7 @@
     shopList.classList.add('hidden-view');
     // v0.23.0 — bug fix: also hide MASTER (see renderShopCategories note).
     if (shopMasterListEl) shopMasterListEl.classList.add('hidden-view');
+    if (shopSkillTreeEl) shopSkillTreeEl.classList.add('hidden-view'); // v0.39.0
     if (!shopHangarListEl) return;
     shopHangarListEl.classList.remove('hidden-view');
     const defs = UPGRADE_DEFS.filter(d => d.category === 'hangar');
@@ -6130,6 +6444,7 @@
     shopCategoriesEl.classList.add('hidden-view');
     shopList.classList.add('hidden-view');
     if (shopHangarListEl) shopHangarListEl.classList.add('hidden-view');
+    if (shopSkillTreeEl) shopSkillTreeEl.classList.add('hidden-view'); // v0.39.0
     if (!shopMasterListEl) return;
     shopMasterListEl.classList.remove('hidden-view');
     // v0.25.0 — two sections: capstones (single-purchase powers) then
@@ -6228,10 +6543,12 @@
       renderMasterShop();
     } else if (currentShopTab === 'hangar') {
       renderHangarUpgrades();
-    } else if (currentShopCategory) {
+    } else if (currentShopCategory && !SKILL_TREE_AVAILABLE) {
+      // v0.39.0 — tree mode has no drill-in level, so a stale category from
+      // a pre-flip session must not route us into the old list view.
       renderCategoryUpgrades(currentShopCategory);
     } else {
-      renderShopCategories();
+      renderUpgradesTab();
     }
     refreshWalletUI();
   }
@@ -6300,7 +6617,7 @@
     Audio.play.uiClick();
     currentShopTab = 'upgrades'; // always land on UPGRADES tab on entry
     currentShopCategory = null; // always open on the category grid
-    renderShopCategories();
+    renderUpgradesTab(); // v0.39.0 — tree or grid depending on the flag
     hideOverlay(startScreen);
     showOverlay(shopScreen);
     // v0.16.0 — catches the edge case where a player's save is already
@@ -6318,7 +6635,7 @@
     e.preventDefault();
     Audio.play.uiBack();
     currentShopCategory = null;
-    renderShopCategories();
+    renderUpgradesTab(); // v0.39.0 — tree or grid depending on the flag
   });
 
   shopCloseBtn.addEventListener('pointerdown', (e) => {
