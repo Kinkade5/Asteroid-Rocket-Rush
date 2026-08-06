@@ -1,7 +1,7 @@
 # Rocket Rush
 
 Flappy-style web game: dodge asteroid pairs, collect coins, grab powerups.
-Mobile-first, PWA-enabled. Currently at v0.39.0.
+Mobile-first, PWA-enabled. Currently at v0.40.0.
 Shipping on Google Play as a TWA (`com.astralgamer.rocketrush`) — in closed testing.
 
 Architecture note (v0.24.0): no longer purely single-file — the global
@@ -546,6 +546,39 @@ Inside `index.html`:
       making the tab bar untestable otherwise.
       Post-launch the real switch is `SKILL_TREE_ENABLED` → `true`.
     - **Not yet playtested in a browser.**
+29. **v0.40.0**: **Skin shapes** — skins can now be a different *object*,
+    not just a repaint.
+    - Until now `SKIN_PALETTES` supplied colours and nothing else, so every
+      skin was the same rocket silhouette recoloured. `SKIN_SHAPES` adds an
+      optional shape layer: SVG `d` strings → `Path2D` → filled on canvas.
+      A skin with no entry draws the classic rocket exactly as before, so
+      this is inert for comet/solar/void and for any future recolour.
+    - **Vector, not sprites.** Path2D stays crisp at any DPI, inlines into
+      the single file (no new assets, no `sw.js` cache entries), and is
+      authored visually in Figma/Inkscape — hand-coding bezier curves for a
+      character would be miserable, and PNGs would need @2x/@3x.
+    - `fill` is either a palette slot (`hull`/`accent`/`window`) or a
+      literal colour, so a shape inherits the existing flame, exhaust and
+      launch plume for free and keeps working if its palette is retuned.
+      `flameX` moves the thrust anchor (classic's tail is x -16).
+    - `drawClassicRocketBody()` is the old body lifted out verbatim so the
+      branch in `drawRocket()` reads as one line rather than wrapping 35
+      lines in an `if`.
+    - **Footprint is a fairness constraint, not taste.** The collision
+      circle is a fixed r=14 whatever the art, so a skin much smaller than
+      the classic 34×26 dies to hits that visibly missed. The demo saucer
+      caught this twice in review: first pass measured 31×13.5, second
+      17.3 tall, final 33.8×23.3 (within 1% / 10% of reference). Measure
+      both axes, not just width.
+    - Two SVG gotchas found while authoring: a circular arc (`A r r`) caps
+      at a semicircle so it can't rise more than half its chord — vertical
+      radius is what buys height; and a quadratic reaches only ~halfway to
+      its control point, so control-point coordinates look exaggerated.
+    - The `saucer` demo skin is **playtest-only** (`demo: true` → free to
+      equip, never purchasable, absent without `?playtest=1`), so it has
+      zero effect on the ✦ economy. It exists as a live template rather
+      than dead reference code.
+    - **No real art yet** — this is the pipeline, not the cosmetics.
 
 Guidance tuning knobs in one block, all single-line edits:
 

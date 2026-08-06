@@ -2014,7 +2014,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.39.0</div>
+    <div class="version-badge" id="versionBadge">v0.40.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -2201,7 +2201,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.39.0';
+  const GAME_VERSION = 'v0.40.0';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -4588,6 +4588,15 @@
     { id: 'void',    label: 'Void Runner', cost: 6,
       desc: 'Dark hull, violet flame. Matches Autopilot\'s guide line.' },
   ];
+  // v0.40.0 — reference shape skin, playtest-only. Exists so the SKIN_SHAPES
+  // pipeline can be seen working end to end (equip it, fly it, watch it
+  // rotate and trail flame) before any real art is commissioned. `demo: true`
+  // makes it free to equip and never purchasable, so it has zero effect on
+  // the ✦ economy, and it is absent entirely from a normal load.
+  if (TEST_PLAYTEST_MODE) {
+    SKIN_DEFS.push({ id: 'saucer', label: 'Saucer (demo)', cost: 0, demo: true,
+      desc: 'Shape-system reference. Not a real skin.' });
+  }
   const SKIN_PALETTES = {
     // hull/accent/window: rocket body. flameInner/Mid/Fade: thrust flame
     // gradient stops. exhaust: thrust+boost particle tint. plume: the two
@@ -4619,7 +4628,96 @@
       flameInner: '#d9a0ff', flameMid: '#a24ff0', flameFade: 'rgba(140,60,220,0)',
       exhaust: '#b06ff5', plume: ['#d9a0ff', '#a24ff0'],
     },
+    // v0.40.0 — demo shape skin. Greens so the alien reads as an alien.
+    saucer: {
+      hull: '#8fe3a8', accent: '#3fae6a', window: '#d8fff0',
+      flameInner: '#c8ffb0', flameMid: '#5fd86b', flameFade: 'rgba(60,200,90,0)',
+      exhaust: '#7fe08a', plume: ['#c8ffb0', '#5fd86b'],
+    },
   };
+
+  // ======================================================================
+  // v0.40.0 — SKIN SHAPES
+  // ======================================================================
+  // Until now every skin was the SAME rocket silhouette recoloured —
+  // SKIN_PALETTES supplies colours and nothing else. This adds an optional
+  // *shape* layer so a skin can be a different object entirely (a saucer, a
+  // monkey on a banana) rather than another paint job.
+  //
+  // A skin with no entry here draws the classic rocket exactly as before, so
+  // this is inert for comet/solar/void and for any future recolour.
+  //
+  // AUTHORING
+  // ---------
+  // Draw in any vector tool (Figma, Inkscape, Illustrator) on a square
+  // canvas, export SVG, and paste each shape's `d` attribute in as a layer.
+  // Rules that come from the game, not from taste:
+  //
+  //   * FACING +X. The rocket travels right and the whole sprite is rotated
+  //     by rocket.rot around its centre, so draw it pointing right.
+  //   * CENTRED. The view box centre maps to the rocket's origin.
+  //   * ~34px WIDE. The classic rocket spans x -18..+16. The collision
+  //     circle is a fixed r=14 regardless of art, so a visibly larger skin
+  //     would die to hits that looked like misses. Keep `size` close to 34.
+  //   * FITS THE SHIELD AURA, a circle of r≈22 centred on the origin.
+  //   * SILHOUETTE FIRST. This renders around 30px on a phone. Detail and
+  //     facial features vanish; only the outline reads. Test by shrinking
+  //     your art to 30px and squinting.
+  //
+  // `fill` is either a palette slot ('hull' | 'accent' | 'window' | any
+  // other SKIN_PALETTES key) or a literal CSS colour. Using slots means the
+  // shape keeps working if its palette is retuned, and it inherits the
+  // existing flame/exhaust/plume for free.
+  const SKIN_SHAPES = {
+    saucer: {
+      view: [64, 64],   // authoring canvas
+      size: 36,         // rendered width in game px (classic is ~34)
+      flameX: -15,      // where the thrust plume attaches, in game px
+      // Deliberately sized so the drawn silhouette is close to the classic
+      // rocket's 34x26. An earlier pass was 31x13 — half the height — which
+      // left the fixed r=14 hitbox sticking out well above and below the
+      // art, so hits that visibly missed would still kill. Match the
+      // reference footprint in BOTH axes, not just width.
+      // Authoring note worth keeping: a circular arc (`A r r`) caps at a
+      // semicircle, so the dome could never rise more than half its chord.
+      // The vertical radius is what buys height — hence `A20 30`. Likewise a
+      // quadratic's curve reaches only about halfway to its control point,
+      // so control-point y values look exaggerated on paper.
+      layers: [
+        // Dome — tall canopy. Carries most of the vertical extent.
+        { fill: 'window', d: 'M12 40 A20 30 0 0 1 52 40 Z' },
+        // Dish — wide lens, the read-at-a-glance part of the silhouette.
+        { fill: 'hull',   d: 'M2 43 Q32 31 62 43 Q32 60 2 43 Z' },
+        // Occupant — a simple head. Any more detail is mud at 30px.
+        { fill: 'accent', d: 'M27 26 A5 6 0 1 0 37 26 A5 6 0 1 0 27 26 Z' },
+        // Underside rim, for a bit of depth against the dish.
+        { fill: 'rgba(0,0,0,0.18)', d: 'M8 45 Q32 53 56 45 Q32 49 8 45 Z' },
+      ],
+    },
+  };
+
+  // Path2D objects are built once and cached on the layer. Rebuilding them
+  // per frame would allocate 4 objects × 60fps per rocket draw.
+  function skinLayerPath(layer) {
+    if (!layer._path) layer._path = new Path2D(layer.d);
+    return layer._path;
+  }
+
+  // Draw a shape skin in the rocket's local space (already translated and
+  // rotated by the caller). Returns nothing; the caller handles the flame.
+  function drawSkinShape(shape, pal) {
+    const [vw, vh] = shape.view;
+    const s = (shape.size || 34) / vw;
+    ctx.save();
+    ctx.scale(s, s);
+    ctx.translate(-vw / 2, -vh / 2);   // view-box centre → origin
+    for (const layer of shape.layers) {
+      ctx.fillStyle = pal[layer.fill] || layer.fill;
+      ctx.fill(skinLayerPath(layer));
+    }
+    ctx.restore();
+  }
+
   const DEFAULT_SKINS_OWNED = { comet: false, solar: false, void: false };
   let skinsOwned = loadSkinsOwned();
   function loadSkinsOwned() {
@@ -4640,7 +4738,14 @@
   function saveSkinsOwned() {
     try { localStorage.setItem('rocketRushSkinsOwned', JSON.stringify(skinsOwned)); } catch (_) {}
   }
-  function isSkinOwned(id) { return id === 'classic' || skinsOwned[id] === true; }
+  function isSkinOwned(id) {
+    if (id === 'classic') return true;
+    // v0.40.0 — demo shapes are free to equip. They only exist under
+    // ?playtest=1, so this can't hand a real skin to a real player.
+    const def = SKIN_DEFS.find(d => d.id === id);
+    if (def && def.demo) return true;
+    return skinsOwned[id] === true;
+  }
   // Active skin — unknown or unowned values fall back to classic, so a
   // tampered/stale save can never equip something unpaid-for or render
   // with a missing palette.
@@ -7928,6 +8033,40 @@
     // glint below stays universal white — it's a highlight, not a color.
     const skin = getSkinPalette();
 
+    // v0.40.0 — body. A skin with a SKIN_SHAPES entry draws that silhouette
+    // instead of the rocket; everything else (auras, flame, exhaust) is
+    // shared, so a new shape inherits the whole feel for free. Skins with no
+    // shape entry are unchanged.
+    const shape = SKIN_SHAPES[activeSkin];
+    if (shape) drawSkinShape(shape, skin);
+    else drawClassicRocketBody(skin);
+
+    // Flame — bigger while thrusting.
+    // v0.40.0 — anchored at the shape's own exhaust point; the classic
+    // rocket's tail is at x -16 and that stays the default.
+    const flameX = shape && typeof shape.flameX === 'number' ? shape.flameX : -16;
+    const fl = (thrusting && state === STATE.PLAY ? 14 : 8) + Math.random() * 5;
+    const grad = ctx.createLinearGradient(flameX, 0, flameX - fl, 0);
+    grad.addColorStop(0, skin.flameInner);
+    grad.addColorStop(0.5, skin.flameMid);
+    grad.addColorStop(1, skin.flameFade);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(flameX, -4);
+    ctx.lineTo(flameX - fl, 0);
+    ctx.lineTo(flameX, 4);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  // v0.40.0 — the original hand-drawn rocket, lifted verbatim out of
+  // drawRocket() so the shape branch above reads as one line instead of
+  // wrapping 35 lines in an `if`. Unchanged geometry: spans x -18..+16,
+  // y -13..+13, which is the reference footprint every SKIN_SHAPES entry
+  // should stay close to (the collision circle is a fixed r=14).
+  function drawClassicRocketBody(skin) {
     ctx.fillStyle = skin.hull;
     ctx.beginPath();
     ctx.moveTo(16, 0);
@@ -7965,22 +8104,6 @@
     ctx.lineTo(-12, 4);
     ctx.closePath();
     ctx.fill();
-
-    // Flame — bigger while thrusting
-    const fl = (thrusting && state === STATE.PLAY ? 14 : 8) + Math.random() * 5;
-    const grad = ctx.createLinearGradient(-16, 0, -16 - fl, 0);
-    grad.addColorStop(0, skin.flameInner);
-    grad.addColorStop(0.5, skin.flameMid);
-    grad.addColorStop(1, skin.flameFade);
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.moveTo(-16, -4);
-    ctx.lineTo(-16 - fl, 0);
-    ctx.lineTo(-16, 4);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.restore();
   }
 
   function drawAsteroid(a) {
