@@ -1,7 +1,7 @@
 # Rocket Rush
 
 Flappy-style web game: dodge asteroid pairs, collect coins, grab powerups.
-Mobile-first, PWA-enabled. Currently at v0.41.0.
+Mobile-first, PWA-enabled. Currently at v0.42.0.
 Shipping on Google Play as a TWA (`com.astralgamer.rocketrush`) — in closed testing.
 
 Architecture note (v0.24.0): no longer purely single-file — the global
@@ -619,6 +619,42 @@ Inside `index.html`:
       outro, DONE dismisses), all three grid-mode targets resolving, and
       both degradation paths.
     - **Copy is unreviewed for tone**, same caveat as the tutorial cards.
+31. **v0.42.0**: Four fixes from Brent's phone playtest of the tutorial + coach.
+    - **The continue tap now carries into thrust.** `showTutorialCard()`
+      clears `thrusting` so the rocket doesn't drift while the card is read,
+      and `dismissTutorialCard()`'s 140ms input lock then swallowed the very
+      press that dismissed it. A player holding the screen got no thrust,
+      had to lift and re-tap, and the rocket — already falling at full
+      gravity the instant PLAY resumed — was well on its way to the floor.
+      Now the dismiss starts thrust directly (the finger is demonstrably
+      down; this runs from its pointerdown), zeroes `rocket.vy` as a catch,
+      and re-arms the v0.37.0 gravity ramp so the world eases back in.
+      The dismiss tap lands on the *scrim*, not the canvas, so the canvas's
+      pointerup never fires for it — hence a **one-shot document-level
+      release listener** (pointerup/touchend/pointercancel). Without it the
+      thrust would stick on permanently, which is worse than the bug.
+    - **Unlimited shields for the tutorial.** The pop still plays in full —
+      that IS the lesson — but the charge isn't spent, so nobody strands
+      themselves with nothing left and dies to the next rock mid-card.
+    - **The floor is non-lethal for the tutorial.** It's the single most
+      likely way a first-timer ends the run early, and ending the tutorial
+      before its lessons are taught defeats the point. Checked *ahead* of
+      the Phoenix path so a tutorial run can never consume the capstone;
+      downward velocity is zeroed so the rocket lands rather than grinds.
+    - **Coach ring coordinate-space bug.** `getBoundingClientRect()` is in
+      VIEWPORT coordinates, but the ring is absolutely positioned inside
+      `#wrap` — `min(100vw,480px) x min(100vh,800px)`, so letterboxed and
+      *not* at 0,0 on a real phone. The ring was therefore offset by
+      `#wrap`'s own origin. Fixed by subtracting the layer's rect;
+      measured aligned to the exact 6px pad at a 400x100 letterbox offset.
+      Two companion fixes: the 0.18s CSS transition was removed (it fought
+      the 180ms reposition interval, so the ring permanently chased and
+      still showed the *previous* step's box a second after advancing), and
+      the target is `scrollIntoView`'d on step change since `#shopList`
+      scrolls and the card can sit below the fold.
+    - Harness grew to 59 checks with source-level assertions for all of the
+      above, including that the dismiss no longer sets `inputLockUntil` and
+      that it always registers a release listener.
 
 Guidance tuning knobs in one block, all single-line edits:
 

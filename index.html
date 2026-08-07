@@ -252,7 +252,11 @@
     border: 2.5px solid #8affc1;
     border-radius: 14px;
     box-shadow: 0 0 0 3px rgba(138,255,193,0.18), 0 0 24px rgba(138,255,193,0.45);
-    transition: top 0.18s ease, left 0.18s ease, width 0.18s ease, height 0.18s ease;
+    /* v0.42.0 — no position transition. It was 0.18s while the coach
+       repositions every 180ms, so the ring was permanently chasing its
+       target and never settled — visibly lagging, and measurably still
+       showing the previous step's box a second after advancing. Snapping is
+       both correct and calmer. The pulse below carries the attention. */
     animation: coachPulse 1.6s ease-in-out infinite;
   }
   @keyframes coachPulse {
@@ -2086,7 +2090,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.41.0</div>
+    <div class="version-badge" id="versionBadge">v0.42.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -2285,7 +2289,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.41.0';
+  const GAME_VERSION = 'v0.42.0';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -7375,9 +7379,39 @@
       return;
     }
     state = STATE.PLAY;
-    // Same lock the READY gate uses, so the dismiss tap can't immediately
-    // register as a thrust the player didn't ask for.
-    inputLockUntil = performance.now() + 140;
+    // v0.42.0 — the dismissing tap now CARRIES INTO THRUST, and the input
+    // lock is gone.
+    //
+    // What playtesting exposed: showTutorialCard() clears `thrusting` so the
+    // rocket doesn't drift while the card is read, and the old 140ms lock
+    // then swallowed the very press that dismissed it. A player holding the
+    // screen to continue got no thrust, had to lift and re-tap, and by then
+    // the rocket — already falling under full gravity the instant PLAY
+    // resumed — was well on its way to the floor. On the tutorial, aimed at
+    // people who have never played, that reads as the game fighting them.
+    //
+    // Two changes: the finger is demonstrably down right now (this runs from
+    // its pointerdown), so start thrust immediately; and re-arm the opening
+    // gravity ramp so the world eases back in rather than resuming at
+    // terminal velocity.
+    thrusting = true;
+    // The world froze mid-flight, so whatever downward velocity the rocket
+    // had when the card opened would resume the instant it closes. Zero it
+    // — a catch, not a boost, the same call v0.33.0's Phoenix Cell made.
+    rocket.vy = 0;
+    launchEaseLeftMs = getDifficulty().launchEaseMs || 0;
+    // The dismiss tap landed on the scrim, not the canvas, so the canvas's
+    // own pointerup/touchend will never fire for it. Without a one-shot
+    // release listener the thrust would stick on forever.
+    const release = () => {
+      thrusting = false;
+      document.removeEventListener('pointerup', release);
+      document.removeEventListener('touchend', release);
+      document.removeEventListener('pointercancel', release);
+    };
+    document.addEventListener('pointerup', release);
+    document.addEventListener('touchend', release);
+    document.addEventListener('pointercancel', release);
   }
 
   // Finish: pay the one-time bonus, then back to the menu.
@@ -7529,6 +7563,15 @@
     coachTitleEl.textContent = step.title;
     coachBodyEl.textContent = step.body;
     coachSkipEl.textContent = step.skipLabel || 'SKIP';
+    // v0.42.0 — bring the target into view. #shopList scrolls (max-height
+    // 60vh), so the Reinforced Hull card can sit below the fold on a short
+    // screen — a ring correctly drawn around an off-screen element helps
+    // nobody. Done once per step rather than every tick, so it doesn't fight
+    // the player scrolling around.
+    const t = step.find ? step.find() : null;
+    if (t && t.scrollIntoView) {
+      try { t.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) { t.scrollIntoView(); }
+    }
     coachTick();
   }
 
@@ -7544,18 +7587,29 @@
     }
     const target = step.find ? step.find() : null;
     if (target) {
+      // v0.42.0 — coordinate-space fix. getBoundingClientRect() is in
+      // VIEWPORT coordinates, but the ring is absolutely positioned inside
+      // #wrap, which is `min(100vw,480px) x min(100vh,800px)` and therefore
+      // letterboxed on most phones — it does not start at 0,0. Positioning
+      // viewport values inside that box offset the ring by #wrap's own
+      // origin, which is why the highlight sat low and to one side on a real
+      // device while looking fine on a desktop where the gap is small or zero.
+      // Subtracting the layer's own origin converts into its local space.
+      const base = coachLayer.getBoundingClientRect();
       const r = target.getBoundingClientRect();
       const pad = 6;
+      const top = r.top - base.top, left = r.left - base.left;
       coachRing.style.display = '';
-      coachRing.style.left = `${r.left - pad}px`;
-      coachRing.style.top = `${r.top - pad}px`;
+      coachRing.style.left = `${left - pad}px`;
+      coachRing.style.top = `${top - pad}px`;
       coachRing.style.width = `${r.width + pad * 2}px`;
       coachRing.style.height = `${r.height + pad * 2}px`;
       // Bubble goes above the target when there's room, else below, so it
-      // never covers the thing it's pointing at.
-      const above = r.top > window.innerHeight * 0.45;
-      coachBubble.style.top = above ? '' : `${r.bottom + 16}px`;
-      coachBubble.style.bottom = above ? `${window.innerHeight - r.top + 16}px` : '';
+      // never covers the thing it's pointing at. Measured against the
+      // layer's height, not the window's, for the same reason as above.
+      const above = top > base.height * 0.45;
+      coachBubble.style.top = above ? '' : `${top + r.height + 16}px`;
+      coachBubble.style.bottom = above ? `${base.height - top + 16}px` : '';
     } else {
       coachRing.style.display = 'none';
       coachBubble.style.top = '';
@@ -9028,7 +9082,12 @@
         if (circleRectOverlap(rocket.x, rocket.y, rocket.r, a.x + 4, a.y, a.w - 8, a.h)) {
           if (shieldCharges > 0) {
             // === SHIELD POP ===
-            shieldCharges--;
+            // v0.42.0 — the tutorial's shields are unlimited. The player
+            // still sees and hears the full pop (that IS the lesson: a hit
+            // costs a shield), but the charge isn't spent, so nobody can
+            // strand themselves partway through with nothing left and be
+            // killed by the next rock while reading a card.
+            if (!tutorialActive) shieldCharges--;
             const iframeMs = getShieldIframeMs();
             shieldIFrameUntil = performance.now() + iframeMs;
             shieldPopEffect = 1;
@@ -9085,8 +9144,17 @@
       // non-lethal: the rocket rests on it while the player recovers.
       // Checked before attemptPhoenixSave so the already-spent capstone
       // isn't consulted again on every frame of contact.
-      if (state === STATE.PLAY && performance.now() >= phoenixFloorGraceUntil
+      // v0.42.0 — the floor is non-lethal for the whole tutorial. It is the
+      // single most likely way a first-time player ends the run early, and
+      // ending the tutorial before its lessons are taught defeats the point.
+      // The rocket rests on the floor and flies back off it. Checked ahead
+      // of the Phoenix path so a tutorial run never consumes the capstone.
+      if (!tutorialActive && state === STATE.PLAY
+          && performance.now() >= phoenixFloorGraceUntil
           && !attemptPhoenixSave(true)) gameOver();
+      // Land rather than sink — kill downward velocity so the rocket sits on
+      // the floor instead of grinding into it.
+      if (tutorialActive && rocket.vy > 0) rocket.vy = 0;
     }
 
     // === Powerup pickups ===
