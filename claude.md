@@ -1,7 +1,7 @@
 # Rocket Rush
 
 Flappy-style web game: dodge asteroid pairs, collect coins, grab powerups.
-Mobile-first, PWA-enabled. Currently at v0.40.0.
+Mobile-first, PWA-enabled. Currently at v0.41.0.
 Shipping on Google Play as a TWA (`com.astralgamer.rocketrush`) — in closed testing.
 
 Architecture note (v0.24.0): no longer purely single-file — the global
@@ -579,6 +579,46 @@ Inside `index.html`:
       zero effect on the ✦ economy. It exists as a live template rather
       than dead reference code.
     - **No real art yet** — this is the pipeline, not the cosmetics.
+30. **v0.41.0**: **First-upgrade coach** — the tutorial now continues past
+    the run loop into the *progression* loop.
+    - The tutorial taught how to fly but stopped before the thing that makes
+      a player come back: earning coins and spending them. This walks them
+      from "I have 500 coins" to "I own Reinforced Hull", triggered
+      automatically 900ms after `completeTutorial()`.
+    - **Shield chosen deliberately**: survivability is the upgrade a new
+      player *feels* immediately, and the numbers already lined up — the
+      tutorial's 500-coin reward comfortably covers its 200-coin first tier
+      (`UPGRADE_COSTS[1]`), leaving change so the shop still feels open.
+    - **Step completion is POLLED from real game state** (is the shop open?
+      does `upgrades.shield.hull > 0`?) on a 180ms interval, rather than by
+      intercepting taps. Consequences: the coach can't desync from reality,
+      a player who navigates a different way still advances, a mis-tap
+      simply doesn't advance instead of breaking the flow, and the same
+      interval re-anchors the ring when the shop re-renders via innerHTML.
+    - **The overlay is `pointer-events: none`** except SKIP. A cutout that
+      swallows the very tap it's requesting is worse than no overlay, and
+      polling means it never needs to capture anything.
+    - **Works in BOTH shop layouts.** Grid mode drills SHOP → SHIELD → card
+      (3 steps); skill-tree mode has no category level, so the SHIELD step
+      is dropped (2 steps). Found the hard way — testing under
+      `?playtest=1` turns the tree on, and the grid-only selector
+      `#shopCategories [data-category="shield"]` stalled the flow. Without
+      that fix the coach would have broken the day `SKILL_TREE_ENABLED`
+      flipped.
+    - **Degrades for repeat players.** The tutorial is replayable but its
+      reward pays once ever, so a returning player may be unable to afford
+      the upgrade or already own it. Both get a single honest card
+      ("EARN SOME COINS" / "ALREADY MAXED") instead of a ring pointing at a
+      button they can't press.
+    - Always skippable, and cancelled by starting a run.
+    - `window.rrStartUpgradeCoach()` is a **playtest-only** hook (absent
+      without `?playtest=1`) so the coach can be re-triggered without
+      sitting through a full tutorial run — useful for tuning copy on a
+      real phone.
+    - Browser-verified: full tree-mode flow (500 → 300 coins, hull T0 → T1,
+      outro, DONE dismisses), all three grid-mode targets resolving, and
+      both degradation paths.
+    - **Copy is unreviewed for tone**, same caveat as the tutorial cards.
 
 Guidance tuning knobs in one block, all single-line edits:
 

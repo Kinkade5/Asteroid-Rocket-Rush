@@ -234,6 +234,78 @@
   }
   .ad-sim-skip { margin-top: 20px; font-size: 11px; }
 
+  /* === v0.41.0 — Tutorial upgrade coach === */
+  /* No dimming scrim on purpose. A cutout overlay that swallows the wrong tap
+     is worse than no overlay at all, and the flow self-corrects anyway
+     because step completion is polled from real game state rather than from
+     intercepting clicks. The ring alone carries the guidance. */
+  .coach-layer {
+    position: absolute;
+    inset: 0;
+    display: none;
+    pointer-events: none;   /* never intercept the tap being requested */
+    z-index: 13;
+  }
+  .coach-layer.active { display: block; }
+  .coach-ring {
+    position: absolute;
+    border: 2.5px solid #8affc1;
+    border-radius: 14px;
+    box-shadow: 0 0 0 3px rgba(138,255,193,0.18), 0 0 24px rgba(138,255,193,0.45);
+    transition: top 0.18s ease, left 0.18s ease, width 0.18s ease, height 0.18s ease;
+    animation: coachPulse 1.6s ease-in-out infinite;
+  }
+  @keyframes coachPulse {
+    0%, 100% { box-shadow: 0 0 0 3px rgba(138,255,193,0.14), 0 0 18px rgba(138,255,193,0.35); }
+    50%      { box-shadow: 0 0 0 5px rgba(138,255,193,0.26), 0 0 30px rgba(138,255,193,0.60); }
+  }
+  body.reduced-motion .coach-ring { animation: none; }
+  .coach-bubble {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 88%;
+    max-width: 320px;
+    background: rgba(15, 20, 45, 0.97);
+    border: 1.5px solid rgba(138, 255, 193, 0.4);
+    border-radius: 14px;
+    padding: 14px 16px 12px;
+    text-align: center;
+    box-shadow: 0 10px 32px rgba(0,0,0,0.6);
+    pointer-events: none;
+  }
+  .coach-step {
+    font-size: 9.5px;
+    letter-spacing: 2px;
+    color: #6f79a8;
+    margin-bottom: 6px;
+  }
+  .coach-title {
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+    color: #8affc1;
+    margin-bottom: 6px;
+  }
+  .coach-body {
+    font-size: 12px;
+    line-height: 1.45;
+    color: #dfe4ff;
+  }
+  .coach-skip {
+    margin-top: 10px;
+    background: none;
+    border: none;
+    font-family: inherit;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    color: #6f79a8;
+    text-decoration: underline;
+    cursor: pointer;
+    pointer-events: auto;   /* the one interactive part of the layer */
+    padding: 4px 10px;
+  }
+
   /* === v0.36.0 — Tutorial lesson card === */
   /* Sits above the countdown/ready layer (z 5) because it can appear over a
      frozen run. Unlike those two this one IS interactive: the scrim takes
@@ -2014,7 +2086,7 @@
       <div class="scoreboard-tease">🔒 Something awaits...</div>
     </div>
     <div class="hint" id="startHint">Hold to thrust • Tap to boost</div>
-    <div class="version-badge" id="versionBadge">v0.40.0</div>
+    <div class="version-badge" id="versionBadge">v0.41.0</div>
   </div>
   <div id="gameOverScreen" class="overlay hidden gone">
     <div class="gameover-tier" id="gameoverTier"></div>
@@ -2082,6 +2154,18 @@
       <div class="ad-sim-timer" id="adSimTimer">3</div>
       <div class="ad-sim-note">A real rewarded unit replaces this panel.<br>Reward is granted only on completion.</div>
       <button class="btn btn-secondary ad-sim-skip" id="adSimSkip">CANCEL (NO REWARD)</button>
+    </div>
+  </div>
+  <!-- v0.41.0 — tutorial upgrade coach. A ring around a real UI element plus
+       an instruction bubble. Deliberately pointer-events:none except SKIP, so
+       it can never block or swallow the tap it's asking the player to make. -->
+  <div id="coachLayer" class="coach-layer">
+    <div class="coach-ring" id="coachRing"></div>
+    <div class="coach-bubble" id="coachBubble">
+      <div class="coach-step" id="coachStep">STEP 1 OF 3</div>
+      <div class="coach-title" id="coachTitle"></div>
+      <div class="coach-body" id="coachBody"></div>
+      <button class="coach-skip" id="coachSkip">SKIP</button>
     </div>
   </div>
   <!-- Tutorial lesson card (v0.36.0) — shown in STATE.TUTORIAL_INFO with the
@@ -2201,7 +2285,7 @@
   // ======================================================================
   // VERSION — bump this when you ship a change. Shown on the main menu.
   // ======================================================================
-  const GAME_VERSION = 'v0.40.0';
+  const GAME_VERSION = 'v0.41.0';
 
   // ======================================================================
   // PHASE 2 — MASTER SHOP & NG+ SCAFFOLDING (feature-flagged, hidden)
@@ -2984,6 +3068,14 @@
   const tutorialCardBody   = document.getElementById('tutorialCardBody');
   const tutorialCardTip    = document.getElementById('tutorialCardTip');
   const tutorialCardCont   = document.getElementById('tutorialCardCont'); // v0.37.0
+  // v0.41.0 — first-upgrade coach
+  const coachLayer   = document.getElementById('coachLayer');
+  const coachRing    = document.getElementById('coachRing');
+  const coachBubble  = document.getElementById('coachBubble');
+  const coachStepEl  = document.getElementById('coachStep');
+  const coachTitleEl = document.getElementById('coachTitle');
+  const coachBodyEl  = document.getElementById('coachBody');
+  const coachSkipEl  = document.getElementById('coachSkip');
   // v0.38.0 — coin doubler prototype
   const adRewardBtn   = document.getElementById('adRewardBtn');
   const adRewardMain  = document.getElementById('adRewardMain');
@@ -5713,6 +5805,20 @@
     });
   }
 
+  // v0.41.0 — SKIP / DONE. The only interactive part of the coach layer.
+  // A guided flow the player can't leave is a trap, so every step offers it.
+  if (coachSkipEl) {
+    coachSkipEl.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      Audio.play.uiBack();
+      stopUpgradeCoach();
+    });
+  }
+  // Keep the ring aligned if the viewport changes mid-flow (rotation, or a
+  // mobile browser chrome bar appearing).
+  window.addEventListener('resize', () => { if (coachIdx >= 0) coachTick(); });
+
   // Lesson-card dismiss. Bound on the scrim (which is pointer-interactive,
   // unlike the countdown/ready overlays) so the tap lands here and never
   // reaches the canvas thrust handler underneath.
@@ -7087,6 +7193,10 @@
     // trailing else branch handles both), so the rocket idle-floats and the
     // backdrop drifts just like the menu.
     state = STATE.READY;
+    // v0.41.0 — starting a run cancels the upgrade coach. It guides menu and
+    // shop navigation; leaving it pinned over live gameplay would be noise
+    // pointing at a button that isn't there.
+    stopUpgradeCoach();
     readyPromptEl.classList.add('active');
     // Brief input lock so the gesture that pressed LAUNCH/RETRY cannot also
     // satisfy the gate it just opened. Reuses the existing post-death lock
@@ -7293,6 +7403,163 @@
       tutorialToastSub.textContent = `+${TUTORIAL_REWARD_COINS} coins banked`;
       tutorialToast.classList.add('show');
       setTimeout(() => tutorialToast.classList.remove('show'), 3200);
+    }
+    // v0.41.0 — the tutorial taught the run loop; this teaches the
+    // progression loop, which is the part that decides whether a new player
+    // comes back. Delayed so the completion toast lands first.
+    setTimeout(startUpgradeCoach, 900);
+  }
+
+  // ======================================================================
+  // v0.41.0 — First-upgrade coach
+  // ======================================================================
+  // Walks the player from "I have coins" to "I own Reinforced Hull", which
+  // is the shield upgrade — chosen because survivability is the upgrade a
+  // new player feels immediately, and because the tutorial's 500-coin reward
+  // comfortably covers its 200-coin first tier.
+  //
+  // Step completion is POLLED from real game state (is the shop open? does
+  // the player own the upgrade?) rather than by intercepting taps. That
+  // means the coach can't desync from reality: a player who navigates a
+  // different way, or buys via some future route, still advances correctly,
+  // and a mis-tap simply doesn't advance rather than breaking the flow.
+  // It's also why the overlay is pointer-events:none — it never needs to
+  // capture the tap it is asking for.
+  const COACH_TICK_MS = 180;
+  let coachSteps = [];
+  let coachIdx = -1;
+  let coachTimer = null;
+
+  function coachShieldCost() {
+    const tier = upgrades.shield.hull;
+    return UPGRADE_COSTS[Math.min(tier + 1, MAX_UPGRADE_TIER)];
+  }
+
+  // The tutorial is replayable but its reward pays once ever, so a repeat
+  // player may arrive already owning the upgrade or unable to afford it.
+  // Both get an honest one-step explanation instead of a dead end pointing
+  // at a button they cannot press.
+  function buildCoachSteps() {
+    const tier = upgrades.shield.hull;
+    if (tier >= MAX_UPGRADE_TIER) {
+      return [{
+        title: 'ALREADY MAXED',
+        body: 'Your hull is fully reinforced. Spend coins on the other lines in SHOP.',
+        skipLabel: 'GOT IT',
+      }];
+    }
+    if (bankedCoins < coachShieldCost()) {
+      return [{
+        title: 'EARN SOME COINS',
+        body: `Reinforced Hull costs ${coachShieldCost().toLocaleString()}. Play a run, collect coins, then find it in SHOP → SHIELD.`,
+        skipLabel: 'GOT IT',
+      }];
+    }
+    // The shop has two layouts and the coach has to work in both. In grid
+    // mode the player drills SHOP → SHIELD → card; in skill-tree mode
+    // (v0.39.0) there is no category level at all — every card is on one
+    // scrolling surface — so the SHIELD step would point at an element that
+    // does not exist and the flow would stall. Found the hard way: testing
+    // under ?playtest=1 turns the tree on, and step 2 hung.
+    const buyBtn = () => document.querySelector(
+      '#shopList [data-upgrade="shield_hull"], #shopSkillTree [data-upgrade="shield_hull"]');
+
+    const openShop = {
+      title: 'SPEND YOUR COINS',
+      body: 'Coins buy permanent upgrades that carry into every run.',
+      find: () => shopBtn,
+      done: () => !shopScreen.classList.contains('hidden'),
+    };
+    const pickCategory = {
+      title: 'SHIELD',
+      body: 'Shields absorb asteroid hits. The best first buy for staying alive.',
+      find: () => document.querySelector('#shopCategories [data-category="shield"]'),
+      done: () => !!buyBtn(),
+    };
+    const buy = {
+      title: 'REINFORCED HULL',
+      body: `${coachShieldCost().toLocaleString()} coins for +1 shield at the start of every run.`,
+      find: buyBtn,
+      done: () => upgrades.shield.hull > 0,
+    };
+    const outro = {
+      title: 'YOU ARE UPGRADED',
+      body: 'You now start every run with an extra shield. Upgrades are permanent — keep banking coins.',
+      skipLabel: 'DONE',
+    };
+    return SKILL_TREE_AVAILABLE
+      ? [openShop, buy, outro]              // tree mode: no drill-in level
+      : [openShop, pickCategory, buy, outro];
+  }
+
+  // v0.41.0 — playtest hook. The coach normally only appears after a full
+  // tutorial run, which is a slow thing to sit through repeatedly while
+  // tuning copy or checking the ring on a real phone. Exposed ONLY under
+  // ?playtest=1, so it cannot be reached in a normal load.
+  if (TEST_PLAYTEST_MODE) {
+    window.rrStartUpgradeCoach = () => startUpgradeCoach();
+  }
+
+  function startUpgradeCoach() {
+    if (!coachLayer) return;
+    coachSteps = buildCoachSteps();
+    coachIdx = 0;
+    coachLayer.classList.add('active');
+    renderCoachStep();
+    if (coachTimer) clearInterval(coachTimer);
+    // One interval does both jobs: keep the ring glued to a target that may
+    // be re-rendered underneath us (the shop rebuilds via innerHTML), and
+    // check whether the step's completion condition has become true.
+    coachTimer = setInterval(coachTick, COACH_TICK_MS);
+  }
+
+  function stopUpgradeCoach() {
+    if (coachTimer) { clearInterval(coachTimer); coachTimer = null; }
+    coachIdx = -1;
+    coachSteps = [];
+    if (coachLayer) coachLayer.classList.remove('active');
+  }
+
+  function renderCoachStep() {
+    const step = coachSteps[coachIdx];
+    if (!step) { stopUpgradeCoach(); return; }
+    const total = coachSteps.filter(s => s.find).length;
+    const nth = coachSteps.slice(0, coachIdx + 1).filter(s => s.find).length;
+    coachStepEl.textContent = step.find ? `STEP ${nth} OF ${total}` : '';
+    coachTitleEl.textContent = step.title;
+    coachBodyEl.textContent = step.body;
+    coachSkipEl.textContent = step.skipLabel || 'SKIP';
+    coachTick();
+  }
+
+  function coachTick() {
+    const step = coachSteps[coachIdx];
+    if (!step) { stopUpgradeCoach(); return; }
+    // Advance first, so a step whose condition was already true when it
+    // opened doesn't sit there asking for something already done.
+    if (step.done && step.done()) {
+      coachIdx++;
+      renderCoachStep();
+      return;
+    }
+    const target = step.find ? step.find() : null;
+    if (target) {
+      const r = target.getBoundingClientRect();
+      const pad = 6;
+      coachRing.style.display = '';
+      coachRing.style.left = `${r.left - pad}px`;
+      coachRing.style.top = `${r.top - pad}px`;
+      coachRing.style.width = `${r.width + pad * 2}px`;
+      coachRing.style.height = `${r.height + pad * 2}px`;
+      // Bubble goes above the target when there's room, else below, so it
+      // never covers the thing it's pointing at.
+      const above = r.top > window.innerHeight * 0.45;
+      coachBubble.style.top = above ? '' : `${r.bottom + 16}px`;
+      coachBubble.style.bottom = above ? `${window.innerHeight - r.top + 16}px` : '';
+    } else {
+      coachRing.style.display = 'none';
+      coachBubble.style.top = '';
+      coachBubble.style.bottom = '18%';
     }
   }
 
